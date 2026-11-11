@@ -31,9 +31,9 @@
     }
   },
   "scripts": {
-    "dev": "node server/index.js",
+    "dev": "node --env-file-if-exists=.env server/index.js",
     "build": "vite build",
-    "start": "node server/index.js --production",
+    "start": "node --env-file-if-exists=.env server/index.js --production",
     "test": "node --test tests/*.test.js",
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore-backup.mjs",

@@ -69,6 +69,10 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 
 完整操作说明：[docs/operations.md](docs/operations.md)。
 
+配置直接写在项目根目录的 `.env` 里，`npm start` / `npm run dev` 会自动读取
+（用的是 Node ≥ 22.9 的 `--env-file-if-exists=.env`，已存在的环境变量优先，不会被文件覆盖）。
+Docker 方式读的也是同一个文件。
+
 ---
 
 ## 配置
@@ -115,6 +119,26 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 | `docs/`                                   | 操作、配置、开发与排障文档                                     |
 
 ---
+
+## 换一台电脑继续用
+
+代码在 GitHub 上，**数据不在**。这两件事要分开准备：
+
+| 在仓库里（跟代码走）     | 只在你本机（不跟代码走）                |
+| ------------------------ | --------------------------------------- |
+| 程序代码、文档、示例文件 | `data/`：数据库、`secret.key`、留档文件 |
+| `.env.example`（模板）   | `.env`：你的访问密码、报告收件人        |
+
+所以换机器是三件事：
+
+1. **拉代码**：`git clone`（或下载 zip）→ `npm ci --ignore-scripts` → `npm run build`。
+2. **搬数据**：把旧机器的整个 `data/` 目录复制过来。
+   ⚠️ `secret.key` 必须一起复制 —— 它是加密已存邮箱密码的钥匙，丢了就解不开，那些账号得重新输密码。
+3. **重建 `.env`**：`cp .env.example .env` 再填值，至少要填 `POSTLANE_REPORT_TO`，
+   对外提供服务时还要填 `POSTLANE_ACCESS_PASSWORD`。
+
+不想手动复制就用备份：旧机器 `npm run backup`，把归档和 `backup-recovery.key` 带到新机器，
+然后 `node scripts/restore-backup.mjs <归档> <密钥> ./data`。详见 [docs/backups.md](docs/backups.md)。
 
 ## 开发
 
