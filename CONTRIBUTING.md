@@ -5,7 +5,7 @@
 ## 开始
 
 ```bash
-git clone https://github.com/xunuoyan/postlane.git
+git clone https://github.com/ilurveivy/postlane.git
 cd postlane
 npm ci --ignore-scripts     # 跳过 better-sqlite3 的原生编译
 npm run build

@@ -19,7 +19,7 @@
 ### 方式一：Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/xunuoyan/postlane.git
+git clone https://github.com/ilurveivy/postlane.git
 cd postlane
 
 cp .env.example .env

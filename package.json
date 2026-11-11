@@ -19,12 +19,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xunuoyan/postlane.git"
+    "url": "git+https://github.com/ilurveivy/postlane.git"
   },
   "bugs": {
-    "url": "https://github.com/xunuoyan/postlane/issues"
+    "url": "https://github.com/ilurveivy/postlane/issues"
   },
-  "homepage": "https://github.com/xunuoyan/postlane#readme",
+  "homepage": "https://github.com/ilurveivy/postlane#readme",
   "overrides": {
     "exceljs": {
       "uuid": "^11.1.1"
