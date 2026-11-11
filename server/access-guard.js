@@ -20,6 +20,33 @@ const isWindows = process.platform === 'win32';
  * When a password is configured the HTTP Basic username is `postlane`; the password is
  * whatever you configured.
  */
+/**
+ * A one-line warning for the cases where the app is reachable by someone else while no
+ * password is in force. Returning a string instead of logging keeps it testable, and it is
+ * deliberately advisory: refusing to boot would break a first `docker compose up`, where
+ * the password is still empty by design.
+ */
+export function accessWarning(env = process.env, { bindHost = '127.0.0.1', lan = false } = {}) {
+  const mode = env.POSTLANE_ACCESS_MODE || 'basic';
+  const hasPassword = Boolean(env.POSTLANE_ACCESS_PASSWORD || env.POSTLANE_ACCESS_PASSWORD_FILE);
+  const exposed =
+    lan || (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost');
+  // Console output stays ASCII English like the rest of the server, so a Windows console
+  // in a legacy code page does not turn the warning into noise.
+  if (!exposed)
+    return hasPassword
+      ? ''
+      : 'No POSTLANE_ACCESS_PASSWORD set: the UI is unauthenticated, local use only.';
+  if (mode === 'off')
+    return `POSTLANE_ACCESS_MODE=off while listening on ${bindHost}: anyone who can reach this port can operate every mail account.`;
+  if (!hasPassword)
+    return (
+      `No POSTLANE_ACCESS_PASSWORD set while listening on ${bindHost}: anyone who can reach this ` +
+      'port can operate every mail account. Set a password (32+ chars) or bind to 127.0.0.1.'
+    );
+  return '';
+}
+
 export function createAccessGuard(env = process.env, files = fs) {
   const mode = env.POSTLANE_ACCESS_MODE || 'basic';
   if (!['basic', 'off'].includes(mode)) throw new Error('Invalid POSTLANE_ACCESS_MODE');

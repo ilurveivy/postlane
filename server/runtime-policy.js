@@ -1,4 +1,5 @@
-import { createAccessGuard } from './access-guard.js';
+import { accessWarning, createAccessGuard } from './access-guard.js';
+export { accessWarning };
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 export const accessGuard = createAccessGuard();

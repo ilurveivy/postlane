@@ -44,6 +44,27 @@ Windows 上不做这个检查。
 
 ## 访问问题
 
+### 容器显示 Up，但浏览器连不上
+
+镜像和 `docker-compose.yml` 里已经设了 `BIND_HOST=0.0.0.0`，正常发布端口就能连。
+会漏掉的情况只有三种：
+
+- 自己写了 `docker run` 却没带 `BIND_HOST`，而且是在容器里裸跑 `node server/index.js` ——
+  服务默认只绑容器自己的回环地址，发布出去的端口永远连不上（日志照样打印 `Postlane ready`）；
+- 自建 Dockerfile 覆盖了镜像里的 `ENV`；
+- `ports` 写反了 —— `4173:4173` 里**前面**那个才是宿主端口。
+
+先分清「容器里活着」还是「根本没起来」：
+
+```bash
+# 容器内部能不能响应（绕开端口映射）
+docker exec postlane node -e "fetch('http://127.0.0.1:4173/ready').then(r=>console.log(r.status))"
+docker logs --tail 30 postlane
+```
+
+容器内 `/ready` 通、宿主机不通 → 就是绑定地址或端口映射问题；
+容器内也不通 → 看日志，多半是数据目录写不进去（见「数据」一节）。
+
 ### 浏览器 403「仅允许本机或已开放的局域网访问」
 
 - 从别的机器访问：需要 `LAN_ACCESS=true`，并且通过私网 IP 访问（`10/8`、`172.16/12`、`192.168/16`）。
@@ -124,6 +145,25 @@ SMTP 交互中断（超时、连接重置、返回 5xx 但没有明确拒绝）�
 
 ```bash
 node scripts/restore-backup.mjs <备份包> <backup-recovery.key> <新目录>
+```
+
+### 容器反复重启，日志只有 `ENOENT ... secret.key`
+
+数据目录挂载方式不对，文件写不进去。镜像以非 root 的 `node` 用户（uid 1000）运行，
+把宿主目录直接 bind mount 进去时属主是宿主用户，容器内既建不了 `secret.key` 也建不了数据库：
+
+```bash
+# ✅ 命名卷：继承镜像里 /data 的属主
+-v postlane-data:/data
+
+# ❌ 宿主目录属主不匹配（从别处抄来的 docker run 命令最容易踩这条）
+-v ./data:/data
+```
+
+非要用 bind mount，就先把宿主目录交给 uid 1000：
+
+```bash
+sudo chown -R 1000:1000 ./data
 ```
 
 ### 备份一直是 `not_started`

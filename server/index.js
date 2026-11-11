@@ -8,6 +8,7 @@ import {
   bindHost,
   waitForActivities,
   accessGuard,
+  accessWarning,
 } from './runtime-policy.js';
 import { returnToPool } from './return-to-pool.js';
 import { preflightAddresses, applyPreflight } from './address-preflight.js';
@@ -1141,6 +1142,8 @@ if (process.argv.includes('--production')) {
   app.use(vite.middlewares);
 }
 const listeningOn = bindHost(lanAccess);
+const warning = accessWarning(process.env, { bindHost: listeningOn, lan: lanAccess });
+if (warning) console.warn(`[security] ${warning}`);
 const httpServer = app.listen(port, listeningOn, () =>
   console.log(
     `Postlane ready: http://${listeningOn === '0.0.0.0' ? 'localhost' : listeningOn}:${port}` +

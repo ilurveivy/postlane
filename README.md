@@ -34,6 +34,21 @@ docker compose up -d --build
 
 打开 http://localhost:4173 。
 
+不想用 compose（比如机器上没装 compose 插件）时，等价的 `docker run`：
+
+```bash
+docker build -t postlane .
+docker run -d --name postlane --restart unless-stopped -p 4173:4173 \
+  -v postlane-data:/data \
+  -e POSTLANE_ACCESS_MODE=basic \
+  -e POSTLANE_ACCESS_PASSWORD="$(openssl rand -base64 32)" \
+  postlane
+```
+
+> ⚠️ 数据目录请用**命名卷**（`postlane-data`）。改成 `-v ./data:/data` 这种宿主目录挂载时，
+> 镜像内的 `node` 用户（uid 1000）写不进去，容器会反复重启并报 `ENOENT ... secret.key`。
+> 见 [troubleshooting](docs/troubleshooting.md)。
+
 ### 方式二：本机 Node
 
 需要 Node.js **22.12+**。
