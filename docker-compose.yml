@@ -8,6 +8,8 @@ services:
       - '4173:4173'
     environment:
       PORT: 4173
+      # 容器的端口映射到 eth0，绑 127.0.0.1 会连不上；访问控制仍由 Host/来源校验负责
+      BIND_HOST: 0.0.0.0
       DATA_DIR: /data
       LAN_ACCESS: 'false'
       # 不设密码就是完全不鉴权 —— 公网部署前务必设置

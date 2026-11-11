@@ -29,6 +29,18 @@ export async function runActivity(fn) {
 export async function waitForActivities() {
   while (active) await delay(25);
 }
+/**
+ * Where the HTTP server listens.
+ *
+ * Binding loopback is the safe default for a desktop install, but inside a container
+ * loopback is unreachable through a published port, so images set BIND_HOST=0.0.0.0.
+ * Widening the bind does not widen access: `allowedHosts` + `privateAddress` above still
+ * decide which requests are answered.
+ */
+export function bindHost(lan = false, override = process.env.BIND_HOST) {
+  const value = String(override ?? '').trim();
+  return value || (lan ? '0.0.0.0' : '127.0.0.1');
+}
 export function assertActivityAllowed() {
   if (verificationMode)
     throw Object.assign(new Error('演示核验模式：禁止发送、同步及外部请求'), {

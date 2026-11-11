@@ -83,15 +83,4 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           docker rm -f postlane-ci >/dev/null || true
           docker volume rm postlane-ci-data >/dev/null || true
-          if [ "$status" -ne 0 ]; then
-            # Belt and braces: workflow logs require authentication to download, while
-            # annotations do not. They are the only way to diagnose a red build from
-            # outside the browser, so dump the essentials here.
-            echo "::error::PL_RUN::$run_out"
-            echo "::error::PL_STATE::$state"
-            echo "::error::PL_LOGLEN::${#logs}"
-            printf '%s' "$logs" | tr '\n' '~' | fold -w 900 | while read -r part; do
-              echo "::error::PL_LOG::$part"
-            done
-          fi
           exit $status

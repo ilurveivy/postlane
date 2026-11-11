@@ -5,6 +5,7 @@ import {
   runtimeMode,
   draining,
   beginDrain,
+  bindHost,
   waitForActivities,
   accessGuard,
 } from './runtime-policy.js';
@@ -1139,8 +1140,12 @@ if (process.argv.includes('--production')) {
   });
   app.use(vite.middlewares);
 }
-const httpServer = app.listen(port, lanAccess ? '0.0.0.0' : '127.0.0.1', () =>
-  console.log(`Postlane ready: http://localhost:${port}${lanAccess ? ' (LAN enabled)' : ''}`),
+const listeningOn = bindHost(lanAccess);
+const httpServer = app.listen(port, listeningOn, () =>
+  console.log(
+    `Postlane ready: http://${listeningOn === '0.0.0.0' ? 'localhost' : listeningOn}:${port}` +
+      `${lanAccess ? ' (LAN enabled)' : ''}${listeningOn === '0.0.0.0' && !lanAccess ? ' (container bind)' : ''}`,
+  ),
 );
 let shutdownStarted = false;
 async function shutdown() {

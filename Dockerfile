@@ -28,7 +28,9 @@ COPY --chown=node:node src/*.js ./src/
 ENV NODE_ENV=production \
     PORT=4173 \
     DATA_DIR=/data \
-    DISABLE_SLEEP_GUARD=true
+    DISABLE_SLEEP_GUARD=true \
+    # A published port reaches the container's eth0, never its loopback.
+    BIND_HOST=0.0.0.0
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]
