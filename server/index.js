@@ -57,6 +57,13 @@ import { all, get, put, remove, encrypt, decrypt, db } from './store.js';
 import { normalizeList, validateCampaign, csv, emailValid } from './domain.js';
 import { settings, transport, sendOne, verifyAccount, accountConcurrency } from './mailer.js';
 import { haltState, setHalt } from './send-halt.js';
+import {
+  applyUnsubscribe,
+  confirmPage,
+  emailFromToken,
+  finishedPage,
+  notFoundPage,
+} from './unsubscribe.js';
 import { dailyCapFor, sentToday, localParts, TIME_ZONE } from './send-policy.js';
 import { checkSenderDomain } from './sender-domain.js';
 const app = express(),
@@ -69,6 +76,24 @@ app.get('/health_check', (_, res) => res.json({ ok: true }));
 app.get('/ready', (_, res) =>
   res.status(draining ? 503 : 200).json({ ready: !draining, mode: runtimeMode }),
 );
+// One-click unsubscribe. Deliberately registered before the host and Basic-auth gate: the
+// person clicking this is a recipient, not the operator, and demanding a password to stop
+// our own email would be indefensible. The token is an HMAC over the address, so it cannot
+// be guessed, and GET only renders a confirmation page because mail scanners prefetch links.
+app.get('/u/:token', (req, res) => {
+  const email = emailFromToken(req.params.token);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!email) return res.status(404).type('html').send(notFoundPage());
+  res.type('html').send(confirmPage(email, req.params.token));
+});
+app.post('/u/:token', (req, res) => {
+  const email = emailFromToken(req.params.token);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!email) return res.status(404).type('html').send(notFoundPage());
+  if (verificationMode) return res.status(403).type('html').send(notFoundPage());
+  const result = applyUnsubscribe(email);
+  res.type('html').send(finishedPage(result.email, result.already));
+});
 app.use((req, res, next) => (draining ? res.status(503).json({ error: '平台正在停止' }) : next()));
 app.use((req, res, next) => {
   const host = req.hostname;

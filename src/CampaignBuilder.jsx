@@ -60,6 +60,9 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
     end: '18:00',
   });
   const [unsubscribe, setUnsubscribe] = useState(false);
+  // 跟进列默认「自动识别」，两个间隔默认 5 天 / 再 10 天，和服务端的默认值一致。
+  const [followUpColumns, setFollowUpColumns] = useState({ second: '', third: '' });
+  const [followUpDelays, setFollowUpDelays] = useState({ second: '5', third: '10' });
   const [preview, setPreview] = useState(null),
     [sampleIndex, setSampleIndex] = useState(0),
     [sampleEnd, setSampleEnd] = useState('first'),
@@ -121,9 +124,17 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
             sheetName: sheet.name,
             rows: sheet.rows,
             ...mapping,
+            // 留空表示自动识别；选了就以所选列为准（顺序固定为第二封、第三封）。
+            ...(followUpColumns.second || followUpColumns.third
+              ? { followUpColumns: [followUpColumns.second, followUpColumns.third] }
+              : {}),
           },
         }
       : {}),
+    followUpDelays: [followUpDelays.second, followUpDelays.third].map((value, index) => {
+      const days = Number(value);
+      return Number.isInteger(days) && days >= 1 ? Math.min(days, 90) : index === 0 ? 5 : 10;
+    }),
     ...(limit ? { limit: Number(limit) } : {}),
     archiveTo,
     mode,
@@ -163,6 +174,7 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
   function chooseSheet(i, data = fileData) {
     setSheetIndex(i);
     setMapping(detect(data.sheets[i].columns));
+    setFollowUpColumns({ second: '', third: '' });
     setLimit('');
   }
   function upload(file) {
@@ -446,6 +458,40 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                           支持 business_email / email_subject /
                           email_content，无法识别的列请手动选择。无效、重复、停发邮箱会在预览中说明。
                         </p>
+                        <div className="builder-mapping-fields">
+                          <label className="field">
+                            第二封跟进（选填）
+                            <select
+                              value={followUpColumns.second}
+                              onChange={(e) =>
+                                setFollowUpColumns({ ...followUpColumns, second: e.target.value })
+                              }
+                            >
+                              <option value="">自动识别「第二封跟进」</option>
+                              {sheet.columns.map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field">
+                            第三封跟进（选填）
+                            <select
+                              value={followUpColumns.third}
+                              onChange={(e) =>
+                                setFollowUpColumns({ ...followUpColumns, third: e.target.value })
+                              }
+                            >
+                              <option value="">自动识别「第三封跟进」</option>
+                              {sheet.columns.map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <p className="builder-muted">
+                          这两列留空就表示没有后续跟进。单元格开头写一行「主题：…」可以单独指定跟进标题，
+                          否则自动回「Re: 原主题」，并挂在同一封邮件的会话里。
+                        </p>
                       </div>
                     )}
                   </>
@@ -581,6 +627,39 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                     </div>
                   </>
                 )}
+                <div className="field">
+                  多步跟进间隔（天）
+                  <div className="form-row">
+                    <label className="field">
+                      第二封在首封后
+                      <input
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={followUpDelays.second}
+                        onChange={(e) =>
+                          setFollowUpDelays({ ...followUpDelays, second: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      第三封在第二封后
+                      <input
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={followUpDelays.third}
+                        onChange={(e) =>
+                          setFollowUpDelays({ ...followUpDelays, third: e.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <small>
+                    只对表格里填了「第二封跟进 / 第三封跟进」的人生效。到期前对方回过信就不发，
+                    前一封没确认送达也不发；整条序列算在同一个任务的额度里。
+                  </small>
+                </div>
                 <label className="field">
                   退订说明
                   <select
@@ -659,6 +738,18 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                     : '发送窗口：不限时段。'}
                   {preview.unsubscribe ? ' 邮件末尾会附加退订说明。' : ' 不附加退订说明。'}
                 </p>
+                {!!(preview.followUps?.second || preview.followUps?.third) && (
+                  <p className="builder-muted">
+                    多步跟进：第二封 {preview.followUps.second} 人（首封后{' '}
+                    {preview.followUps.delays[0]} 天）、第三封 {preview.followUps.third}{' '}
+                    人（第二封后 {preview.followUps.delays[1] || 10} 天）。对方回信即停。
+                  </p>
+                )}
+                {preview.unsubscribe && preview.unsubscribeLinkAvailable === false && (
+                  <div className="builder-error">
+                    没有配置 POSTLANE_PUBLIC_ORIGIN：邮件里放不了一键退订链接，只能靠对方回信退订。
+                  </div>
+                )}
                 {!!preview.limits?.length && (
                   <p className="builder-muted">
                     今日剩余额度：

@@ -89,6 +89,12 @@ export function createFollowupIngest({ get, put }) {
           r = c?.recipients.find((r) => r.id === t.recipientId);
         if (r) {
           r.lastReplyAt = m.date;
+          // A reply ends the sequence: the prospect answered, so a "just following up"
+          // email would be embarrassing.
+          if (r.nextFollowUpAt || (!r.followUpsStopped && r.followUps?.length)) {
+            r.nextFollowUpAt = 0;
+            r.followUpsStopped = '已收到回复';
+          }
           put('campaign', c);
         }
       }

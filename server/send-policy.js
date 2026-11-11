@@ -140,8 +140,18 @@ export function sentOnDate(campaigns, accountIds, date) {
   for (const campaign of campaigns || []) {
     if (campaign.mode !== 'live' || !wanted.has(campaign.accountId)) continue;
     for (const recipient of campaign.recipients || []) {
+      // Count accepted submissions, not recipient rows: the first email on Monday and a
+      // follow-up on Saturday spend two days of allowance, and rewriting the row must not
+      // silently refund the earlier day.
+      const accepted = (recipient.attempts || []).filter(
+        (a) => COUNTED.has(a.status) && a.startedAt,
+      );
+      if (accepted.length) {
+        total += accepted.filter((a) => localParts(Date.parse(a.startedAt)).date === date).length;
+        continue;
+      }
       if (!COUNTED.has(recipient.status)) continue;
-      const at = recipient.sentAt || recipient.attempts?.at(-1)?.startedAt;
+      const at = recipient.sentAt;
       if (at && localParts(Date.parse(at)).date === date) total += 1;
     }
   }
@@ -161,8 +171,23 @@ export function unsubscribeFooter(from) {
   return `\n\n——\n如果这类邮件对你没有帮助，直接回复「退订」即可，我会立即停止发送，不会再打扰（${reply}）。`;
 }
 
-/** `List-Unsubscribe` lets the mail client offer an opt-out button. */
-export function unsubscribeHeaders(from) {
+/**
+ * `List-Unsubscribe` lets the mail client offer an opt-out button.
+ *
+ * With a one-click URL the header also carries `List-Unsubscribe-Post`, which is what Gmail
+ * and Yahoo use to unsubscribe without the recipient ever seeing our page; the `mailto:`
+ * stays as the fallback that works with any client.
+ */
+export function unsubscribeHeaders(from, url = '') {
   const address = String(from || '').trim();
-  return address ? { 'List-Unsubscribe': `<mailto:${address}?subject=unsubscribe>` } : {};
+  const target = String(url || '').trim();
+  const parts = [
+    target ? `<${target}>` : '',
+    address ? `<mailto:${address}?subject=unsubscribe>` : '',
+  ].filter(Boolean);
+  if (!parts.length) return {};
+  return {
+    'List-Unsubscribe': parts.join(', '),
+    ...(target ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {}),
+  };
 }

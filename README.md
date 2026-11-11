@@ -78,7 +78,7 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 1. **发件设置** —— 添加一个 SMTP 账号并点「测试连接」。Gmail 要用**应用专用密码**，不是登录密码。
    只用来收信回复的账号可以勾「仅回复」，它不参与批量分配。
    测试连接会顺带检查发件域名的 SPF/DKIM/DMARC，缺记录会给出提示（不阻断保存）。
-2. **导入批量任务** —— 上传 `.xlsx` / `.csv`。第一行是表头，必须有 `business_email`、`email_subject`、`email_content` 三列，其余列会变成可用的 `{{变量}}`。
+2. **导入批量任务** —— 上传 `.xlsx` / `.csv`。第一行是表头，必须有 `business_email`、`email_subject`、`email_content` 三列，其余列会变成可用的 `{{变量}}`。可选再加 `第二封跟进` / `第三封跟进` 两列，填了就按「首封后 5 天、再 10 天」自动跟进，回信即停（见 [多步跟进](docs/followups.md)）。
    导入会去重并校验邮箱格式，也可以先跑一次地址预检（DNS/MX），见 [docs/address-preflight.md](docs/address-preflight.md)。
 
    没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx)（全是 `example.com` 假地址，发不出去）。
@@ -122,7 +122,9 @@ Docker 方式读的也是同一个文件。
 - **只在指定时段发送**，默认工作日 09:00–18:00（新加坡时间），窗口外挂起不静默丢弃；
 - **发送前筛地址**：占位符（`your.email@…`、`example.com`）、退信地址（`noreply@`、`postmaster@`）直接排除，
   角色邮箱（`info@`、`sales@`）只标记；跨任务重复的地址自动跳过；
-- **退订说明可开关**，打开时同时带 `List-Unsubscribe` 邮件头；
+- **退订说明可开关**，打开时同时带 `List-Unsubscribe` / `List-Unsubscribe-Post` 邮件头；配置了
+  `POSTLANE_PUBLIC_ORIGIN` 还会带上签名的一键退订链接，点一下即生效（见 [一键退订](docs/unsubscribe.md)）；
+- **跟进也守同样的纪律**：第二、三封跟进和首封共用每日上限与发送时段，前一封确认送达且到点无回复才发；
 - **一键急停**：顶栏「全部停发」同时停掉活动任务、回复草稿和报表投递，恢复后从当前收件人继续。
 
 细节和 Message-ID 为什么改成用你自己的域名：[docs/sending-policy.md](docs/sending-policy.md)。
@@ -206,6 +208,9 @@ npm run format:check   # prettier 校验
 - [排障手册](docs/troubleshooting.md)
 - [开发指南](docs/development.md)
 - [发送纪律](docs/sending-policy.md)（每日上限 / 时间段 / 退订 / 急停）
+- [多步跟进](docs/followups.md)（第二、三封怎么写、什么时候发、什么时候停）
+- [一键退订](docs/unsubscribe.md)（签名链接 / 邮件头 / 压制名单）
+- [邮箱预热](docs/warmup.md)（新邮箱怎么先跑起来；含自建互寄方案）
 - [地址预检](docs/address-preflight.md) · [渠道元数据修复](docs/channel-recovery.md)
 
 ---

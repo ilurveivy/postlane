@@ -20,6 +20,8 @@ import {
 } from './send-policy.js';
 import { sendingHalted } from './send-halt.js';
 import { senderDomain } from './sender-domain.js';
+import { campaignHasOpenFollowUps, scheduleNextFollowUp, stageOf } from './followups.js';
+import { unsubscribeUrl } from './unsubscribe.js';
 export function settings(accountId) {
   return accountId ? get('account', accountId) : get('settings', 'smtp');
 }
@@ -136,13 +138,19 @@ export async function advanceCampaign(...args) {
 async function advanceCampaignImpl(selected, key, send = sendOne) {
   assertActivityAllowed();
   let c = get('campaign', selected.id);
-  if (!c || !['running', 'scheduled'].includes(c.status)) return;
+  if (!c) return;
+  const active = ['running', 'scheduled'].includes(c.status);
+  // A finished batch can still owe follow-up emails, so it re-enters the queue for those.
+  if (!active && !campaignHasOpenFollowUps(c)) return;
   if (c.status === 'scheduled') {
     c.status = 'running';
     put('campaign', c);
   }
   const chosen = settings(c.accountId);
   if (chosen?.replyOnly || (c.mode === 'live' && chosen?.disabled)) {
+    // Nothing left to send in a finished batch: leave its queued follow-ups for later instead
+    // of cancelling a campaign whose first emails already went out.
+    if (!active) return;
     put(
       'campaign',
       returnToPool(
@@ -187,7 +195,24 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
     put('campaign', finishCampaign(c));
     return;
   }
+  const stage = stageOf(row);
+  const isFollowUp = stage > 0;
+  const plan = isFollowUp ? row.followUps?.[stage - 1] : null;
+  if (isFollowUp && !plan) {
+    row.followUpsStopped = '跟进内容缺失';
+    row.nextFollowUpAt = 0;
+    put('campaign', c);
+    return;
+  }
   if (c.mode === 'live' && get('suppression', row.email)) {
+    if (isFollowUp) {
+      // The first email is already out; failing it retroactively would rewrite history.
+      // Stopping the sequence is the honest outcome.
+      row.followUpsStopped = '收件地址已退订或永久退信';
+      row.nextFollowUpAt = 0;
+      put('campaign', c);
+      return;
+    }
     row.status = 'failed';
     row.error = '收件地址永久退信或已退订，已阻止发送';
     put('campaign', finishCampaign(c));
@@ -198,9 +223,13 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
   // reserved pseudo-domain and some filters score it as a forged identifier.
   if (c.mode === 'live')
     row.messageId = `<${randomUUID()}@${senderDomain(chosen?.from) || 'postlane.local'}>`;
+  // Follow-ups continue the first thread, so they carry its Message-ID and show up as one
+  // conversation instead of three unrelated cold emails.
+  if (!isFollowUp && c.mode === 'live') row.threadMessageId = row.messageId;
   row.attempts ||= [];
   row.attempts.push({
     messageId: row.messageId,
+    stage,
     startedAt: new Date().toISOString(),
     status: 'sending',
   });
@@ -219,22 +248,42 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
       if (!account) throw new Error('发件账号不存在');
       if (c.senderEmail && account.from !== c.senderEmail)
         throw new Error('发件账号与任务绑定账号不一致，已暂停');
-      const body = render(c.body, row.fields);
+      const fields = row.fields;
+      // A follow-up with no subject of its own replies in the existing thread, which is both
+      // what a human would do and what keeps the two messages from looking like a new blast.
+      const subject = plan?.subject
+        ? render(plan.subject, fields)
+        : isFollowUp
+          ? `Re: ${render(c.subject, fields)}`
+          : render(c.subject, fields);
+      const body = render(plan?.body ?? c.body, fields);
       // Opt-out is per campaign: appended only when the operator asked for it and the copy
       // does not already contain its own wording.
       const outgoingBody =
         c.unsubscribe === true && !hasOptOutWording(body)
           ? body + unsubscribeFooter(chosen.from)
           : body;
-      const optOutHeaders = c.unsubscribe === true ? unsubscribeHeaders(chosen.from) : {};
+      // The link needs a public origin; without one the mailto fallback is all we can offer.
+      const optOutUrl = c.unsubscribe === true ? unsubscribeUrl(row.email) : '';
+      const optOutHeaders =
+        c.unsubscribe === true ? unsubscribeHeaders(chosen.from, optOutUrl) : {};
+      const threading =
+        isFollowUp && row.threadMessageId
+          ? { inReplyTo: row.threadMessageId, references: row.threadMessageId }
+          : {};
       const result = await send(
         account,
         row.email,
-        render(c.subject, row.fields),
+        subject,
         outgoingBody,
         c.plainOnly === true,
         row.messageId,
-        Object.keys(optOutHeaders).length ? { headers: optOutHeaders } : {},
+        Object.keys(optOutHeaders).length || Object.keys(threading).length
+          ? {
+              ...threading,
+              ...(Object.keys(optOutHeaders).length ? { headers: optOutHeaders } : {}),
+            }
+          : {},
       );
       if (!result.accepted?.length) throw new Error('发送服务未接受此收件人');
       status = 'sent';
@@ -248,17 +297,35 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
   }
   c = get('campaign', c.id);
   const current = c.recipients.find((r) => r.id === row.id);
+  const finishedAt = Date.now();
+  const finishedIso = new Date(finishedAt).toISOString();
   Object.assign(current, {
     ...outcome,
     status,
     error,
     messageId,
     providerStatus,
-    sentAt: new Date().toISOString(),
+    lastSentAt: finishedIso,
+    // `sentAt` stays the first email of the sequence: reports and the daily allowance are
+    // about "this person was contacted today", not "the third email went out today".
+    sentAt: current.sentAt || finishedIso,
   });
+  if (status === 'sent') {
+    // `stage` counts confirmed sends, so retrying the same email must not advance it. A crash
+    // mid-submission leaves the row `uncertain`, which blocks the sequence rather than
+    // repeating a follow-up the recipient may already have received.
+    current.stage = stage + 1;
+    scheduleNextFollowUp(current, finishedAt);
+    if (!current.nextFollowUpAt) current.followUpsDoneAt = finishedIso;
+  } else if (isFollowUp && ['uncertain', 'needs_review'].includes(status)) {
+    // An ambiguous follow-up is never resent: we cannot know whether it arrived, and a
+    // duplicate "just following up" is worse than stopping the sequence.
+    current.nextFollowUpAt = 0;
+    current.followUpsStopped = '跟进提交结果不明，需人工核对';
+  }
   const attempt =
     current.attempts.find((a) => a.messageId === row.messageId) || current.attempts.at(-1);
-  Object.assign(attempt, { status, error, completedAt: new Date().toISOString() });
+  Object.assign(attempt, { status, error, completedAt: finishedIso });
   if (outcome.failureKind === 'account') {
     // Authentication affects the account, unlike an individual recipient failure.
     put('queue_account', { id: key, nextAt: Date.now() + 15 * 60000, error, blocked: true });
@@ -272,6 +339,8 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
     nextAt: Math.max(c.nextAt, outcome.failureKind === 'account' ? Date.now() + 15 * 60000 : 0),
   });
   if (c.status === 'running') finishCampaign(c);
+  // Stop advertising follow-ups once none are left, so the queue can let this campaign go.
+  if (c.followUpEnabled && !campaignHasOpenFollowUps(c)) c.followUpEnabled = false;
   put('campaign', c);
 }
 const configuredLimit = Number(process.env.SEND_ACCOUNT_CONCURRENCY || 3);
@@ -293,7 +362,9 @@ const queue = createAccountQueue({
         .filter(
           (c) =>
             c.status === 'running' ||
-            (c.status === 'scheduled' && Date.parse(c.scheduledAt) <= Date.now()),
+            (c.status === 'scheduled' && Date.parse(c.scheduledAt) <= Date.now()) ||
+            // Follow-ups are owed by campaigns that already finished their first round.
+            campaignHasOpenFollowUps(c),
         )
         .concat(reportQueue?.list() || []),
     ),

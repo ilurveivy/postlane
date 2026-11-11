@@ -2531,6 +2531,14 @@ function TaskDetail({ detail: c, onClose, onAction, onFollowup, busy, onRetryRow
                     <small className="follow-kind bounce">已退信</small>
                   )}
                   {r.lastReplyAt && <small className="follow-kind reply">已有回复</small>}
+                  {r.optedOutAt && <small className="follow-kind reply">已退订</small>}
+                  {!!r.followUps?.length && (
+                    <small className="muted">
+                      {' '}
+                      · 跟进 {Math.min(r.stage || 1, r.followUps.length + 1)}/
+                      {r.followUps.length + 1}
+                    </small>
+                  )}
                   {r.sentEvidence && <small className="muted"> · 已发送箱有记录</small>}
                 </td>
                 <td className="result-note">
@@ -2544,6 +2552,8 @@ function TaskDetail({ detail: c, onClose, onAction, onFollowup, busy, onRetryRow
                       ))}
                     </details>
                   )}
+                  {r.nextFollowUpAt > Date.now() && <p>下一封跟进：{date(r.nextFollowUpAt)}</p>}
+                  {r.followUpsStopped && <p>跟进已停：{r.followUpsStopped}</p>}
                   {r.retryAt && r.status === 'retry_wait' && <p>下次重试：{date(r.retryAt)}</p>}
                   {r.reconcileAt && r.status === 'uncertain' && (
                     <p>下次核对：{date(r.reconcileAt)}</p>

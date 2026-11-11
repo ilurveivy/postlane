@@ -3,7 +3,15 @@ import { archiveRecipients } from './report-recipients.js';
 import { DEFAULT_WINDOW, TIME_ZONE, dailyCapFor, minutesOf, sentToday } from './send-policy.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { normalizeList, render, validateCampaign } from './domain.js';
+import { normalizeList, render, validateCampaign, variables } from './domain.js';
+import {
+  DEFAULT_FOLLOW_UP_DELAYS,
+  MAX_FOLLOW_UP_DELAY_DAYS,
+  buildFollowUpPlan,
+  detectFollowUpColumns,
+  validateFollowUpPlan,
+} from './followups.js';
+import { unsubscribeLinkAvailable } from './unsubscribe.js';
 import { unscheduledLists } from '../src/unscheduled.js';
 
 export { archiveRecipients };
@@ -25,6 +33,8 @@ const inputSchema = z.object({
       emailColumn: z.string().min(1),
       subjectColumn: z.string().min(1),
       bodyColumn: z.string().min(1),
+      // 【第二封跟进】/【第三封跟进】. Detected from the header when not passed explicitly.
+      followUpColumns: z.array(z.string().min(1)).max(2).default([]),
     })
     .optional(),
   limit: z.number().int().min(1).max(10000).optional(),
@@ -59,6 +69,13 @@ const inputSchema = z.object({
     })
     .default({ ...DEFAULT_WINDOW }),
   rate: z.number().int().min(1).max(60).default(1),
+  // Days to wait before 第二封 / 第三封, counted from the email before it. A follow-up is
+  // only sent when the previous email is confirmed delivered and no reply has arrived.
+  followUpDelays: z
+    .array(z.number().int().min(1).max(MAX_FOLLOW_UP_DELAY_DAYS))
+    .min(1)
+    .max(2)
+    .default(DEFAULT_FOLLOW_UP_DELAYS),
 });
 
 export function createCampaignBuilder({
@@ -132,6 +149,9 @@ export function createCampaignBuilder({
         })),
         v.emailColumn,
       );
+      importedList.followUpColumns = v.followUpColumns.length
+        ? v.followUpColumns
+        : detectFollowUpColumns(Object.keys(v.rows[0]));
       importedList.id = 'builder-import-' + hash(v);
       importedList.contacts = importedList.contacts.map((r) => ({
         ...r,
@@ -155,9 +175,14 @@ export function createCampaignBuilder({
         if (['sent', 'uncertain', 'sending'].includes(r.status)) alreadyContacted.add(r.email);
     const available = unscheduledLists(sources, campaigns);
     const rows = available
-      .flatMap((l) =>
-        l.contacts.map((r) => ({
+      .flatMap((l) => {
+        // An imported list remembers what the operator picked; a stored list is detected.
+        const columns = l.followUpColumns?.length
+          ? l.followUpColumns
+          : detectFollowUpColumns(l.columns || Object.keys(l.contacts?.[0]?.fields || {}));
+        return l.contacts.map((r) => ({
           ...r,
+          followUps: buildFollowUpPlan(r.fields, columns, d.followUpDelays),
           fields: {
             ...r.fields,
             source_list_id: l.id,
@@ -165,8 +190,8 @@ export function createCampaignBuilder({
             recipient_type: '外部收件人',
           },
           sourceListId: l.id,
-        })),
-      )
+        }));
+      })
       .filter((r) => {
         const check = checks.get(r.email);
         if (check?.status === 'invalid') {
@@ -219,6 +244,15 @@ export function createCampaignBuilder({
         throw Error(`${r.email} 的标题或正文超过长度限制`);
       r.fields.email_subject = subject;
       r.fields.email_content = body;
+      r.followUps ||= [];
+      validateFollowUpPlan(r.followUps, r.email);
+      // A follow-up may use variables the first email does not; a silently empty `{{公司}}`
+      // in a follow-up is worse than refusing to schedule it.
+      const followUpVars = variables(r.followUps.map((s) => `${s.subject}\n${s.body}`).join('\n'));
+      const missing = followUpVars.filter(
+        (k) => !Object.hasOwn(r.fields, k) || !String(r.fields[k] ?? '').trim(),
+      );
+      if (missing.length) throw Error(`${r.email} 的跟进缺少变量：${missing.join('、')}`);
     }
     let offset = 0;
     const groups = accounts.map((account, i) => {
@@ -260,6 +294,13 @@ export function createCampaignBuilder({
       sendWindow: p.d.sendWindow,
       unsubscribe: p.d.unsubscribe,
       timeZone: TIME_ZONE,
+      followUps: {
+        second: p.recipients.filter((r) => r.followUps?.[0]).length,
+        third: p.recipients.filter((r) => r.followUps?.[1]).length,
+        delays: p.d.followUpDelays,
+      },
+      // Without a public origin the opt-out header can only offer `mailto:`.
+      unsubscribeLinkAvailable: unsubscribeLinkAvailable(),
       limits: p.groups
         .filter((g) => g.formal)
         .map((g) => ({
@@ -336,13 +377,16 @@ export function createCampaignBuilder({
           randomInterval: p.d.randomInterval,
           sendWindow: p.d.sendWindow,
           unsubscribe: p.d.unsubscribe,
+          followUpDelays: p.d.followUpDelays,
+          // Nothing in this batch has a follow-up when every cell was empty.
+          followUpEnabled: contacts.some((r) => r.followUps?.length),
           plainOnly: true,
           stopOnError: false,
           scheduledAt: p.d.scheduledAt,
           status: 'draft',
           createdAt: new Date().toISOString(),
           recoveryVersion: 2,
-          recipients: contacts.map((r) => ({ ...r, status: 'pending', error: '' })),
+          recipients: contacts.map((r) => ({ ...r, status: 'pending', error: '', stage: 0 })),
         };
         validateCampaign(c);
         // Ensure the templating layer is lossless for canonical per-row content.

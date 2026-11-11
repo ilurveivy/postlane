@@ -1,3 +1,5 @@
+import { dueFollowUp, earliestFollowUpAt } from './followups.js';
+
 export const MAX_ATTEMPTS = 3;
 export const retryDelay = (attempt) => Math.min(30 * 60000, 60000 * 2 ** Math.max(0, attempt - 1));
 export const OPEN_DELIVERY = ['pending', 'sending', 'retry_wait', 'uncertain', 'needs_review'];
@@ -44,7 +46,10 @@ export function failureOutcome(error, attempts, now = Date.now()) {
 export function candidate(c, now = Date.now()) {
   return (
     c.recipients.find((r) => r.status === 'pending') ||
-    c.recipients.find((r) => r.status === 'retry_wait' && (r.retryAt || 0) <= now)
+    c.recipients.find((r) => r.status === 'retry_wait' && (r.retryAt || 0) <= now) ||
+    // Follow-ups only become candidates once they are due; a recipient whose first email
+    // is still pending always wins, so a batch never stalls behind a long sequence.
+    c.recipients.find((r) => dueFollowUp(r, now))
   );
 }
 export function campaignReadyAt(c, now = Date.now()) {
@@ -52,6 +57,9 @@ export function campaignReadyAt(c, now = Date.now()) {
   const retries = c.recipients.filter((r) => r.status === 'retry_wait');
   if (retries.length)
     return Math.max(c.nextAt || 0, Math.min(...retries.map((r) => r.retryAt || 0)));
+  // A campaign waiting on its next follow-up must not be polled as if it were ready now.
+  const followUpAt = earliestFollowUpAt(c);
+  if (followUpAt) return Math.max(c.nextAt || 0, followUpAt);
   // Run once to update completion / attention state without occupying the account thereafter.
   return c.nextAt || 0;
 }
