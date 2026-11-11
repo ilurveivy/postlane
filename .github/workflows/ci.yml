@@ -82,4 +82,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           docker rm -f postlane-ci >/dev/null || true
           docker volume rm postlane-ci-data >/dev/null || true
+          if [ "$status" -ne 0 ]; then
+            # Belt and braces: workflow logs require authentication to download, while
+            # annotations do not. Emitting the tail as base64 annotations keeps a red
+            # build diagnosable from outside the browser.
+            printf '%s' "$logs" | base64 -w0 | fold -w 3000 | while read -r part; do
+              echo "::error::POSTLANE_LOG:${part}"
+            done
+          fi
           exit $status
