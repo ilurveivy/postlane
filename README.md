@@ -1,5 +1,8 @@
 # Postlane 邮序
 
+[![CI](https://github.com/ilurveivy/postlane/actions/workflows/ci.yml/badge.svg)](https://github.com/ilurveivy/postlane/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **自托管的个性化冷邮件工作台。** 把一份 Excel 变成几百封各自不同的邮件，按发件账号均匀分配、按节奏预约发出，再把回信统一收进来跟进。
 
 > Self-hosted personalized cold-email workbench: import a spreadsheet, render one email per row, spread the batch across your sender accounts, schedule it, then handle replies in one inbox. Node.js + React + SQLite, single-host deployment, no SaaS dependency.
