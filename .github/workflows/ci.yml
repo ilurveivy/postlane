@@ -48,10 +48,11 @@ jobs:
       - name: smoke test the image
         run: |
           set -uo pipefail
-          docker run -d --name postlane-ci \
+          run_out="$(docker run -d --name postlane-ci \
             -e DATA_DIR=/data \
             -v postlane-ci-data:/data \
-            -p 4173:4173 postlane:ci
+            -p 4173:4173 postlane:ci 2>&1)" || true
+          echo "run: $run_out"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:4173/ready >/dev/null 2>&1; then break; fi
             sleep 2
@@ -84,10 +85,13 @@ jobs:
           docker volume rm postlane-ci-data >/dev/null || true
           if [ "$status" -ne 0 ]; then
             # Belt and braces: workflow logs require authentication to download, while
-            # annotations do not. Emitting the tail as base64 annotations keeps a red
-            # build diagnosable from outside the browser.
-            printf '%s' "$logs" | base64 -w0 | fold -w 3000 | while read -r part; do
-              echo "::error::POSTLANE_LOG:${part}"
+            # annotations do not. They are the only way to diagnose a red build from
+            # outside the browser, so dump the essentials here.
+            echo "::error::PL_RUN::$run_out"
+            echo "::error::PL_STATE::$state"
+            echo "::error::PL_LOGLEN::${#logs}"
+            printf '%s' "$logs" | tr '\n' '~' | fold -w 900 | while read -r part; do
+              echo "::error::PL_LOG::$part"
             done
           fi
           exit $status
