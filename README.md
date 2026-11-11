@@ -81,7 +81,10 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 2. **导入批量任务** —— 上传 `.xlsx` / `.csv`。第一行是表头，必须有 `business_email`、`email_subject`、`email_content` 三列，其余列会变成可用的 `{{变量}}`。可选再加 `第二封跟进` / `第三封跟进` 两列，填了就按「首封后 5 天、再 10 天」自动跟进，回信即停（见 [多步跟进](docs/followups.md)）。
    导入会去重并校验邮箱格式，也可以先跑一次地址预检（DNS/MX），见 [docs/address-preflight.md](docs/address-preflight.md)。
 
-   没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx)（全是 `example.com` 假地址，发不出去）。
+   没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx) —— 它演示了表头、`{{变量}}`
+和新增的 `第二封跟进` / `第三封跟进` 两列（第 4 行故意留空）。注意里面的地址是 `example.com`
+示例地址，**预览会按设计把它们全部排除**（占位符域名是硬拦的，避免真发给假地址），
+所以想点通完整流程请换成你自己的名单。
 
 3. **安排发送** —— 选任务、选账号、看预览（就是收件人真实看到的内容）、设节奏、发送时间窗口、是否加退订说明，然后保存草稿 / 立即发送 / 加入预约。
    每个账号每天有上限（新账号 20 封起步，硬顶 200 封），窗口外自动挂起 —— 见 [docs/sending-policy.md](docs/sending-policy.md)。
