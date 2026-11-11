@@ -5,6 +5,7 @@ import { failureOutcome } from './delivery-policy.js';
 import { randomUUID } from 'node:crypto';
 import { all, get, put, db } from './store.js';
 import { settings, sendOne, registerReportQueue } from './mailer.js';
+import { sendingHalted } from './send-halt.js';
 import { syncMail, tracking } from './followup.js';
 import { gmailAccount } from './followup-domain.js';
 import {
@@ -382,11 +383,15 @@ async function deliverReportImpl(job, key, send = sendOne) {
 }
 registerReportQueue({
   list: () =>
-    all('batch-report')
-      .filter((r) =>
-        r.deliveries.some((d) => d.status === 'pending' && (!d.nextAt || d.nextAt <= Date.now())),
-      )
-      .map((r) => ({ ...r, reportJob: true })),
+    sendingHalted()
+      ? []
+      : all('batch-report')
+          .filter((r) =>
+            r.deliveries.some(
+              (d) => d.status === 'pending' && (!d.nextAt || d.nextAt <= Date.now()),
+            ),
+          )
+          .map((r) => ({ ...r, reportJob: true })),
   run: deliverReport,
   error: (error, job) => {
     const r = get('batch-report', job.id);

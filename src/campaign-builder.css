@@ -365,3 +365,32 @@
     font-size: 12px;
   }
 }
+
+/* sending window: weekday chips */
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.weekday {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #d8e0da;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+}
+.weekday.active {
+  border-color: #397bdd;
+  background: #eef4ff;
+  color: #1c4ed8;
+  font-weight: 600;
+}
+.weekday input {
+  accent-color: #397bdd;
+  margin: 0;
+}

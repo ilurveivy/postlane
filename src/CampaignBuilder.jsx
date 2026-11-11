@@ -21,6 +21,15 @@ const detect = (columns) => ({
       /^(email_content|postlane_body|body|content|邮件话术|邮件正文|正文)$/i.test(c),
     ) || '',
 });
+const WEEKDAYS = [
+  [1, '周一'],
+  [2, '周二'],
+  [3, '周三'],
+  [4, '周四'],
+  [5, '周五'],
+  [6, '周六'],
+  [7, '周日'],
+];
 const toggle = (items, value) =>
   items.includes(value) ? items.filter((x) => x !== value) : [...items, value];
 
@@ -44,6 +53,13 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
     [scheduledAt, setScheduledAt] = useState(''),
     [randomInterval, setRandomInterval] = useState(true),
     [rate, setRate] = useState(1);
+  const [sendWindow, setSendWindow] = useState({
+    enabled: true,
+    days: [1, 2, 3, 4, 5],
+    start: '09:00',
+    end: '18:00',
+  });
+  const [unsubscribe, setUnsubscribe] = useState(false);
   const [preview, setPreview] = useState(null),
     [sampleIndex, setSampleIndex] = useState(0),
     [sampleEnd, setSampleEnd] = useState('first'),
@@ -114,6 +130,8 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
     scheduledAt: scheduled ? (scheduledAt ? new Date(scheduledAt).toISOString() : '') : null,
     randomInterval,
     rate,
+    sendWindow,
+    unsubscribe,
   };
   // The reviewed payload is immutable until the next preview; every option change invalidates it.
   const signature = JSON.stringify(input);
@@ -502,6 +520,81 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                   )}
                 </div>
                 <label className="field">
+                  发送时间窗口（新加坡时间）
+                  <select
+                    value={sendWindow.enabled ? 'on' : 'off'}
+                    onChange={(e) =>
+                      setSendWindow({ ...sendWindow, enabled: e.target.value === 'on' })
+                    }
+                  >
+                    <option value="on">只在指定时段发送</option>
+                    <option value="off">不限时段（可能在深夜发出，不推荐）</option>
+                  </select>
+                  <small>
+                    每个发件邮箱每天还有上限：新账号按 20 → 30 → 50 → 100 → 200 逐步放开。
+                  </small>
+                </label>
+                {sendWindow.enabled && (
+                  <>
+                    <div className="form-row">
+                      <label className="field">
+                        从
+                        <input
+                          type="time"
+                          value={sendWindow.start}
+                          onChange={(e) => setSendWindow({ ...sendWindow, start: e.target.value })}
+                        />
+                      </label>
+                      <label className="field">
+                        到
+                        <input
+                          type="time"
+                          value={sendWindow.end}
+                          onChange={(e) => setSendWindow({ ...sendWindow, end: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                    <div className="field">
+                      发送日
+                      <div className="weekday-picker">
+                        {WEEKDAYS.map(([value, label]) => (
+                          <label
+                            key={value}
+                            className={
+                              'weekday' + (sendWindow.days.includes(value) ? ' active' : '')
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              checked={sendWindow.days.includes(value)}
+                              onChange={() =>
+                                setSendWindow({
+                                  ...sendWindow,
+                                  days: toggle(sendWindow.days, value),
+                                })
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <label className="field">
+                  退订说明
+                  <select
+                    value={unsubscribe ? 'on' : 'off'}
+                    onChange={(e) => setUnsubscribe(e.target.value === 'on')}
+                  >
+                    <option value="off">不加（一对一私信风格）</option>
+                    <option value="on">在邮件末尾加一行「回复即可退订」</option>
+                  </select>
+                  <small>
+                    加了更容易被识别为营销邮件，但投诉率更低；同时会带 List-Unsubscribe 头。
+                  </small>
+                </label>
+                <label className="field">
                   开始时间
                   <select
                     value={scheduled ? 'later' : 'now'}
@@ -551,6 +644,33 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                     : '确认后立即开始'}
                   。均分后每账号正式邮件数最多相差 1 封；未分配邮件的账号不会创建任务或发送副本。
                 </p>
+                <p className="builder-muted">
+                  {preview.sendWindow?.enabled
+                    ? '发送窗口：新加坡时间 ' +
+                      preview.sendWindow.start +
+                      '–' +
+                      preview.sendWindow.end +
+                      '，' +
+                      preview.sendWindow.days
+                        .map((d) => WEEKDAYS.find(([v]) => v === d)?.[1] || '')
+                        .filter(Boolean)
+                        .join('、') +
+                      '；窗口外自动挂起，不会深夜发出。'
+                    : '发送窗口：不限时段。'}
+                  {preview.unsubscribe ? ' 邮件末尾会附加退订说明。' : ' 不附加退订说明。'}
+                </p>
+                {!!preview.limits?.length && (
+                  <p className="builder-muted">
+                    今日剩余额度：
+                    {preview.limits
+                      .map(
+                        (l) =>
+                          l.email + ' ' + Math.max(0, l.dailyCap - l.sentToday) + '/' + l.dailyCap,
+                      )
+                      .join(' · ')}
+                    （按新加坡时间 0 点重置；超出部分自动排到下一个发送窗口）
+                  </p>
+                )}
                 {preview.uniqueEmails < preview.formal && (
                   <div className="builder-error">
                     这批文案涉及 {preview.uniqueEmails}{' '}

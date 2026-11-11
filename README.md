@@ -58,12 +58,14 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 
 1. **发件设置** —— 添加一个 SMTP 账号并点「测试连接」。Gmail 要用**应用专用密码**，不是登录密码。
    只用来收信回复的账号可以勾「仅回复」，它不参与批量分配。
+   测试连接会顺带检查发件域名的 SPF/DKIM/DMARC，缺记录会给出提示（不阻断保存）。
 2. **导入批量任务** —— 上传 `.xlsx` / `.csv`。第一行是表头，必须有 `business_email`、`email_subject`、`email_content` 三列，其余列会变成可用的 `{{变量}}`。
    导入会去重并校验邮箱格式，也可以先跑一次地址预检（DNS/MX），见 [docs/address-preflight.md](docs/address-preflight.md)。
 
    没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx)（全是 `example.com` 假地址，发不出去）。
 
-3. **安排发送** —— 选任务、选账号、看预览（就是收件人真实看到的内容）、设节奏与预约时间，然后保存草稿 / 立即发送 / 加入预约。
+3. **安排发送** —— 选任务、选账号、看预览（就是收件人真实看到的内容）、设节奏、发送时间窗口、是否加退订说明，然后保存草稿 / 立即发送 / 加入预约。
+   每个账号每天有上限（新账号 20 封起步，硬顶 200 封），窗口外自动挂起 —— 见 [docs/sending-policy.md](docs/sending-policy.md)。
 4. **邮箱与回复跟进** —— IMAP 拉回回信，按「需要回复 / 已处理 / 退信」分类处理，可导出跟进表。
 5. **批次报表** —— 每个批次的实际投递结果、失败原因、重试历史，与留档副本彼此独立。
 
@@ -89,6 +91,21 @@ Docker 方式读的也是同一个文件。
 | `POSTLANE_MODE`            | `live`   | `verify` = 只读演示模式                                        |
 | `POSTLANE_REPORT_TO`       | 空       | 执行报告 / 核查报告 / 留档副本的收件人；留空则不发这些内部邮件 |
 | `POSTLANE_BACKUP_ENABLED`  | `false`  | 打开每日加密备份                                               |
+
+---
+
+## 发送纪律
+
+平台默认就会替你守住这几条，不需要记着配置：
+
+- **每个账号每天有上限**，新账号按 20 → 30 → 50 → 100 → 200 封爬坡，硬顶 200 封；
+- **只在指定时段发送**，默认工作日 09:00–18:00（新加坡时间），窗口外挂起不静默丢弃；
+- **发送前筛地址**：占位符（`your.email@…`、`example.com`）、退信地址（`noreply@`、`postmaster@`）直接排除，
+  角色邮箱（`info@`、`sales@`）只标记；跨任务重复的地址自动跳过；
+- **退订说明可开关**，打开时同时带 `List-Unsubscribe` 邮件头；
+- **一键急停**：顶栏「全部停发」同时停掉活动任务、回复草稿和报表投递，恢复后从当前收件人继续。
+
+细节和 Message-ID 为什么改成用你自己的域名：[docs/sending-policy.md](docs/sending-policy.md)。
 
 ---
 
@@ -168,6 +185,7 @@ npm run format:check   # prettier 校验
 - [备份与恢复](docs/backups.md)
 - [排障手册](docs/troubleshooting.md)
 - [开发指南](docs/development.md)
+- [发送纪律](docs/sending-policy.md)（每日上限 / 时间段 / 退订 / 急停）
 - [地址预检](docs/address-preflight.md) · [渠道元数据修复](docs/channel-recovery.md)
 
 ---

@@ -3759,3 +3759,70 @@ a:focus-visible {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* emergency stop */
+.halt-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #e2b6b0;
+  background: #fff6f5;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.halt-switch:hover {
+  background: #ffeceb;
+}
+.halt-switch.halted {
+  background: #b42318;
+  border-color: #b42318;
+  color: #fff;
+}
+.halt-switch:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.halt-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #f0c2bc;
+  border-left: 4px solid #b42318;
+  border-radius: 10px;
+  background: #fff6f5;
+  color: #7a271a;
+  font-size: 13px;
+}
+.halt-banner span {
+  flex: 1;
+}
+.halt-banner button {
+  border: 1px solid #b42318;
+  background: #fff;
+  color: #b42318;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+/* sender quota + domain preflight */
+.account-quota {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #46524b;
+}
+.domain-warnings {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #8a5a00;
+}
+.domain-warnings li {
+  margin: 2px 0;
+}

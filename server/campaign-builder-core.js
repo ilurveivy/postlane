@@ -1,5 +1,6 @@
 import { applyPreflight } from './address-preflight.js';
 import { archiveRecipients } from './report-recipients.js';
+import { DEFAULT_WINDOW, TIME_ZONE, dailyCapFor, minutesOf, sentToday } from './send-policy.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { normalizeList, render, validateCampaign } from './domain.js';
@@ -40,6 +41,23 @@ const inputSchema = z.object({
   mode: z.enum(['live', 'simulation']).default('simulation'),
   scheduledAt: z.string().datetime({ offset: true }).nullable().default(null),
   randomInterval: z.boolean().default(true),
+  // Opt-out copy and the sending window are per task, because tone and allowed hours
+  // differ between one-off outreach and a long nurture batch.
+  unsubscribe: z.boolean().default(false),
+  sendWindow: z
+    .object({
+      enabled: z.boolean().default(true),
+      days: z.array(z.number().int().min(1).max(7)).min(1).max(7).default(DEFAULT_WINDOW.days),
+      start: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .default(DEFAULT_WINDOW.start),
+      end: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .default(DEFAULT_WINDOW.end),
+    })
+    .default({ ...DEFAULT_WINDOW }),
   rate: z.number().int().min(1).max(60).default(1),
 });
 
@@ -55,7 +73,6 @@ export function createCampaignBuilder({
   function builderSources() {
     const lists = all('list').sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
     return {
-      accounts: eligibleAccounts(),
       lists: unscheduledLists(lists, all('campaign')).map((l) => ({
         id: l.id,
         name: l.name,
@@ -65,6 +82,13 @@ export function createCampaignBuilder({
         count: l.contacts.length,
       })),
       archiveRecipients: archiveRecipients(),
+      sendWindowDefaults: DEFAULT_WINDOW,
+      timeZone: TIME_ZONE,
+      accounts: eligibleAccounts().map((a) => ({
+        ...a,
+        dailyCap: dailyCapFor(get('account', a.id)),
+        sentToday: sentToday(all('campaign'), a.id),
+      })),
     };
   }
 
@@ -74,6 +98,8 @@ export function createCampaignBuilder({
     for (const values of [d.accountIds, d.listIds, d.archiveTo])
       if (new Set(values).size !== values.length) throw Error('账号、批次或副本收件人不能重复选择');
     if (!d.listIds.length === !d.imported) throw Error('请选择未排期批次，或导入一份表格');
+    if (d.sendWindow.enabled && !(minutesOf(d.sendWindow.start) < minutesOf(d.sendWindow.end)))
+      throw Error('发送时间段需要「开始」早于「结束」');
     if (d.scheduledAt && Date.parse(d.scheduledAt) <= Date.now())
       throw Error('请选择未来的预约时间');
     const eligible = eligibleAccounts();
@@ -121,6 +147,12 @@ export function createCampaignBuilder({
       if (sources.length !== d.listIds.length) throw Error('所选批次已被删除，请重新选择');
     }
     const campaigns = all('campaign');
+    // One address must not receive the same cold email from two different tasks: a second
+    // identical message is the fastest way to be reported as spam.
+    const alreadyContacted = new Set();
+    for (const other of campaigns)
+      for (const r of other.recipients || [])
+        if (['sent', 'uncertain', 'sending'].includes(r.status)) alreadyContacted.add(r.email);
     const available = unscheduledLists(sources, campaigns);
     const rows = available
       .flatMap((l) =>
@@ -139,6 +171,10 @@ export function createCampaignBuilder({
         const check = checks.get(r.email);
         if (check?.status === 'invalid') {
           issues.push({ email: r.email, reason: check.reason });
+          return false;
+        }
+        if (alreadyContacted.has(r.email)) {
+          issues.push({ email: r.email, reason: '这个地址在其它任务里已经发过信，本次跳过' });
           return false;
         }
         const suppression = get('suppression', r.email);
@@ -209,6 +245,16 @@ export function createCampaignBuilder({
       total: p.groups.reduce((n, g) => n + g.total, 0),
       uniqueEmails: new Set(p.recipients.map((r) => r.email)).size,
       issues: p.issues,
+      sendWindow: p.d.sendWindow,
+      unsubscribe: p.d.unsubscribe,
+      timeZone: TIME_ZONE,
+      limits: p.groups
+        .filter((g) => g.formal)
+        .map((g) => ({
+          email: g.account.email,
+          dailyCap: dailyCapFor(get('account', g.account.id)),
+          sentToday: sentToday(all('campaign'), g.account.id),
+        })),
       addressWarnings: review.filter((r) => r.status === 'warning'),
       groups: p.groups.map(({ rows, ...g }) => g),
       // Enough to review first/last content for every account without returning huge worksheets.
@@ -276,6 +322,8 @@ export function createCampaignBuilder({
           emailReports: true,
           rate: p.d.rate,
           randomInterval: p.d.randomInterval,
+          sendWindow: p.d.sendWindow,
+          unsubscribe: p.d.unsubscribe,
           plainOnly: true,
           stopOnError: false,
           scheduledAt: p.d.scheduledAt,

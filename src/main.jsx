@@ -39,6 +39,7 @@ import {
   Tray,
   CalendarBlank,
   Question,
+  StopCircle,
 } from '@phosphor-icons/react';
 import './styles.css';
 import Followup from './Followup.jsx';
@@ -298,6 +299,21 @@ function App() {
   const workerState = runtimeStatus?.workerState || state?.workerState;
   const submissionsEnabled = runtimeStatus?.submissionsEnabled ?? state?.submissionsEnabled;
   const previousIncoming = useRef(null);
+  const halted = Boolean(state?.halt?.halted);
+  // One switch for "stop everything now": campaigns, replies and report deliveries all read
+  // the same flag, so nothing keeps trickling out while the operator is panicking.
+  const toggleHalt = () =>
+    run(async () => {
+      const next = !halted;
+      if (next && !window.confirm('立即停止全部发送？正在发送的这一封会完成，其余全部挂起。'))
+        return;
+      await api('/send-halt', {
+        method: 'POST',
+        body: { halted: next, reason: next ? '操作台急停' : '操作台恢复' },
+      });
+      await refresh();
+      setToast(next ? '已停止所有发送：进行中的任务会停在下一封之前' : '已恢复发送');
+    });
   const refresh = async () => {
     const s = await api('/state');
     token = s.token;
@@ -672,6 +688,22 @@ function App() {
                   核验模式 · 只读，发送与同步已禁用
                 </span>
               )}
+              {state.runtimeMode === 'live' && (
+                <button
+                  type="button"
+                  className={'halt-switch' + (halted ? ' halted' : '')}
+                  onClick={toggleHalt}
+                  disabled={busy}
+                  title={
+                    halted
+                      ? '所有发送已暂停，点击恢复'
+                      : '立刻停止全部发送（活动任务、回复、报告投递）'
+                  }
+                >
+                  <StopCircle size={16} weight={halted ? 'fill' : 'regular'} />
+                  {halted ? '已停发 · 恢复' : '全部停发'}
+                </button>
+              )}
               <span className={'connection ' + (offline ? 'warning' : '')}>
                 <i />
                 {offline ? '连接已中断' : state.settings ? '发件账号已配置' : '发件账号待配置'}
@@ -681,6 +713,21 @@ function App() {
               <span className="top-avatar">P</span>
             </div>
           </header>
+          {halted && (
+            <div className="halt-banner" role="alert">
+              <StopCircle size={18} weight="fill" />
+              <span>
+                已全站停发（{state.halt?.reason || '手动急停'}
+                {state.halt?.halted && state.halt?.at
+                  ? ' · ' + new Date(state.halt.at).toLocaleString('zh-CN')
+                  : ''}
+                ）。已排队的任务不会丢，恢复后从当前收件人继续。
+              </span>
+              <button type="button" onClick={toggleHalt} disabled={busy}>
+                恢复发送
+              </button>
+            </div>
+          )}
           <main key={page} className={page === 'inbox' ? 'inbox-main' : ''}>
             {page === 'inbox' && (
               <Inbox
@@ -2604,8 +2651,10 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
       secure: a?.secure ?? true,
       user: a?.user || '',
       password: '',
+      dailyCap: a?.dailyCap ?? '',
     });
     setVerified(false);
+    setDomainWarnings(a?.domainCheck?.warnings || []);
   }
   const [form, setForm] = useState({
       provider: initial?.provider || 'smtp',
@@ -2618,8 +2667,10 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
       secure: initial?.secure ?? true,
       user: initial?.user || '',
       password: '',
+      dailyCap: initial?.dailyCap ?? '',
     }),
-    [verified, setVerified] = useState(false);
+    [verified, setVerified] = useState(false),
+    [domainWarnings, setDomainWarnings] = useState(initial?.domainCheck?.warnings || []);
   const [audiences, setAudiences] = useState([]);
   const isMarketing = form.provider === 'mailchimp-marketing';
   const isMailchimp = form.provider === 'mailchimp';
@@ -2631,10 +2682,13 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
   async function save() {
     if (!accountForm.current.reportValidity()) throw new Error('请补齐表单中的必填项');
     const from = form.from.trim();
+    const cap = Number(form.dailyCap);
     const body = {
       ...form,
       from,
       name: form.name.trim() || from.split('@')[0].slice(0, 80),
+      // Empty means "let the warm-up ramp decide"; the server still hard-caps at 200.
+      dailyCap: Number.isFinite(cap) && cap >= 1 ? Math.min(200, Math.round(cap)) : undefined,
       ...(!isMarketing && !isMailchimp ? { user: form.user.trim() || from } : {}),
     };
     const saved = await api(accountId ? '/accounts/' + accountId : '/accounts', {
@@ -2704,6 +2758,16 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
             >
               {accounts.find((a) => a.id === accountId)?.disabled ? '恢复可用' : '设为不可用'}
             </Button>
+            {(() => {
+              const current = accounts.find((a) => a.id === accountId);
+              if (!current) return null;
+              return (
+                <p className="account-quota">
+                  今日已发 <strong>{current.sentToday ?? 0}</strong> 封 · 上限{' '}
+                  <strong>{current.dailyCap ?? 200}</strong> 封（新加坡时间 0 点重置）
+                </p>
+              );
+            })()}
           </div>
         )}
       </section>
@@ -2945,6 +3009,22 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
                 </label>
               </>
             )}
+            <label className="field">
+              每天最多发多少封（留空＝按账号年龄自动放开）
+              <input
+                type="number"
+                min="1"
+                max="200"
+                step="1"
+                placeholder="自动：20 → 30 → 50 → 100 → 200"
+                value={form.dailyCap}
+                onChange={(e) => change('dailyCap', e.target.value)}
+              />
+              <small>
+                硬上限 200 封/账号/天，按新加坡时间 0
+                点重置。新账号自动爬坡，是为了不在最脆弱的头几天把域名烧掉。
+              </small>
+            </label>
             <div className="settings-actions">
               <Button
                 type="button"
@@ -2952,14 +3032,19 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
                 onClick={() =>
                   run(async () => {
                     const savedId = await save();
-                    await api('/accounts/' + savedId + '/verify', { method: 'POST' });
+                    const check = await api('/accounts/' + savedId + '/verify', {
+                      method: 'POST',
+                    });
                     setVerified(true);
+                    setDomainWarnings(check.warnings || []);
                     notify(
-                      isMarketing
-                        ? 'Marketing 连接成功，请确认已选择并保存 Audience'
-                        : isMailchimp
-                          ? 'Mailchimp 凭证和发件域名认证通过'
-                          : 'SMTP 连接和身份验证成功',
+                      check.warnings?.length
+                        ? '连接成功，但发件域名的 SPF/DKIM/DMARC 有缺口，见下方提示'
+                        : isMarketing
+                          ? 'Marketing 连接成功，请确认已选择并保存 Audience'
+                          : isMailchimp
+                            ? 'Mailchimp 凭证和发件域名认证通过'
+                            : 'SMTP 连接和身份验证成功',
                     );
                   })
                 }
@@ -2977,6 +3062,13 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
                 <div>
                   <strong>连接成功，发件账号已就绪</strong>
                   <p>连接验证不会发送邮件；可在任务中发送测试邮件确认效果。</p>
+                  {!!domainWarnings.length && (
+                    <ul className="domain-warnings">
+                      {domainWarnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             )}

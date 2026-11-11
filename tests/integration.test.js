@@ -51,7 +51,9 @@ async function launch() {
   throw new Error('Server did not start: ' + output);
 }
 async function stop() {
-  if (server?.exitCode === null) {
+  // A child killed by a signal keeps exitCode === null and sets signalCode, so both must be
+  // checked: otherwise a second stop() waits forever for an 'exit' that already happened.
+  if (server && server.exitCode === null && server.signalCode === null) {
     server.kill();
     await once(server, 'exit');
   }
@@ -158,10 +160,17 @@ test('完整流程：导入、演练、持久化、SMTP 与队列控制', async 
         body: {
           name: 'preflight test',
           emailColumn: 'email',
-          rows: [{ email: 'bad' }, { email: 'a@example.com' }, { email: 'a@example.com' }],
+          rows: [
+            { email: 'bad' },
+            { email: 'a@example.com' },
+            { email: 'a@postlane.dev' },
+            { email: 'a@postlane.dev' },
+          ],
         },
       });
-      assert.deepEqual(review.counts, { invalid: 1, warning: 1, clear: 0 });
+      // example.com is a reserved placeholder domain, so the send review blocks it outright;
+      // an ordinary domain that DNS could not confirm stays a warning, never "clear".
+      assert.deepEqual(review.counts, { invalid: 2, warning: 1, clear: 0 });
       assert.equal((await request('/state')).campaigns.length, 0);
     });
     await t.test('同一数据目录拒绝第二个发送队列进程', async () => {
@@ -567,7 +576,9 @@ test('完整流程：导入、演练、持久化、SMTP 与队列控制', async 
         });
         const done = await poll(c.id, (c) => c.status === 'completed');
         assert.equal(done.senderEmail, account.from);
-        assert.match(done.recipients[0].messageId, /@postlane\.local>/);
+        // Message-ID is stamped with the sender's own domain: a forged or unresolvable
+        // domain in that header is a spam signal, so it must match the envelope sender.
+        assert.match(done.recipients[0].messageId, /@example\.com>$/);
         assert(received.at(-1).text.includes(done.recipients[0].messageId));
         assert.equal(received.at(-1).envelope.mailFrom.address, account.from);
         await request('/campaigns/' + c.id, {
@@ -591,10 +602,15 @@ test('完整流程：导入、演练、持久化、SMTP 与队列控制', async 
         method: 'POST',
         body: { to: 'test@example.com', subject: 'Hello', body: '<script>danger</script>' },
       });
-      assert.equal(received.length, 1);
-      assert.equal(received[0].envelope.rcptTo.length, 1);
-      assert.equal(received[0].envelope.rcptTo[0].address, 'test@example.com');
-      assert.match(received[0].text, /multipart\/alternative/);
+      // An earlier subtest may still have a delivery in flight, so select the envelope this
+      // call asked for instead of assuming the fixture is otherwise empty.
+      const sent = received.filter((r) =>
+        r.envelope.rcptTo.some((t) => t.address === 'test@example.com'),
+      );
+      assert.equal(sent.length, 1);
+      assert.equal(sent[0].envelope.rcptTo.length, 1);
+      assert.equal(sent[0].envelope.rcptTo[0].address, 'test@example.com');
+      assert.match(sent[0].text, /multipart\/alternative/);
     });
     await t.test('Mailbox API protects drafts, shared presets and manual sending', async () => {
       const a = await request('/accounts', {

@@ -1,4 +1,5 @@
 import { randomUUID, randomInt } from 'node:crypto';
+import { addressRule } from './address-rules.js';
 import { withChannelMetadata } from './channel-metadata.js';
 export const emailValid = (value) =>
   typeof value === 'string' &&
@@ -35,6 +36,13 @@ export function normalizeList(name, rows, emailColumn, preserveFields = []) {
     }
     if (seen.has(email)) {
       issues.push({ row: i + 2, email, reason: '重复邮箱' });
+      return;
+    }
+    // Placeholder and role mailboxes bounce or never read; filtering them at import keeps
+    // them out of the sender's reputation, not just out of this one batch.
+    const rule = addressRule(email, { checkDomain: false });
+    if (rule?.status === 'invalid') {
+      issues.push({ row: i + 2, email, reason: rule.reason });
       return;
     }
     seen.add(email);

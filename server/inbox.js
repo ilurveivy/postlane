@@ -2,6 +2,7 @@ import { createReplyDrafts } from './reply-drafts-core.js';
 import { assertActivityAllowed, workersEnabled, runActivity } from './runtime-policy.js';
 import { all, get, put, remove, decrypt } from './store.js';
 import { settings, sendOne, registerReplyQueue } from './mailer.js';
+import { sendingHalted } from './send-halt.js';
 import { sendDelay } from './domain.js';
 import { mailId } from './inbox-domain.js';
 import { createInboxView } from './inbox-view.js';
@@ -217,10 +218,14 @@ async function deliverDraftImpl(job, key, send = sendOne) {
   put('queue_account', { id: key, nextAt: Date.now() + sendDelay({ mode: 'live' }) });
 }
 registerReplyQueue({
+  // Emergency stop also holds replies: an operator hitting it wants silence, not "only
+  // the automated ones".
   list: () =>
-    all('reply-draft')
-      .filter((d) => d.status === 'queued')
-      .map((d) => ({ ...d, mode: 'live', replyJob: true })),
+    sendingHalted()
+      ? []
+      : all('reply-draft')
+          .filter((d) => d.status === 'queued')
+          .map((d) => ({ ...d, mode: 'live', replyJob: true })),
   run: deliverDraft,
   error: (e, job) => {
     const d = get('reply-draft', job.id);

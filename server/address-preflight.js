@@ -1,4 +1,5 @@
 import { Resolver } from 'node:dns/promises';
+import { addressRule } from './address-rules.js';
 import { emailValid } from './domain.js';
 
 const cache = new Map();
@@ -27,7 +28,7 @@ export async function inspectDomain(domain, resolver) {
 
 export async function preflightAddresses(
   emails,
-  { resolverFactory, lookupSuppression = () => null, budgetMs = 8000 } = {},
+  { resolverFactory, lookupSuppression = () => null, budgetMs = 8000, domainRules = true } = {},
 ) {
   const unique = [
     ...new Set(
@@ -84,11 +85,18 @@ export async function preflightAddresses(
   );
   return unique.map((email) => {
     const blocked = lookupSuppression(email);
+    // Imports stay lenient about domains (only the send review blocks them), so the
+    // operator's own file is never silently rewritten at import time.
+    const rule = addressRule(email, { checkDomain: domainRules });
     let result = !emailValid(email)
       ? { status: 'invalid', reason: '邮箱格式无效' }
-      : blocked
-        ? { status: 'invalid', reason: blocked.reason }
-        : checks.get(email.split('@')[1]);
+      : rule?.status === 'invalid'
+        ? rule
+        : blocked
+          ? { status: 'invalid', reason: blocked.reason }
+          : checks.get(email.split('@')[1]);
+    // A role mailbox is a warning, not a block: info@ is a real target for small teams.
+    if (rule?.status === 'warning' && result?.status !== 'invalid') result = rule;
     const typo = {
       'gmial.com': 'gmail.com',
       'gamil.com': 'gmail.com',

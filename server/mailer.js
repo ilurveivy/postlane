@@ -9,6 +9,17 @@ import { mailchimpClient, sendMailchimp, verifyMailchimp } from './mailchimp.js'
 import { smtpProxy } from './network.js';
 import { all, get, put, decrypt } from './store.js';
 import { render, emailHtml, sendDelay } from './domain.js';
+import {
+  dailyCapFor,
+  hasOptOutWording,
+  nextWindowOpenAt,
+  sentToday,
+  unsubscribeFooter,
+  unsubscribeHeaders,
+  windowOpen,
+} from './send-policy.js';
+import { sendingHalted } from './send-halt.js';
+import { senderDomain } from './sender-domain.js';
 export function settings(accountId) {
   return accountId ? get('account', accountId) : get('settings', 'smtp');
 }
@@ -84,6 +95,7 @@ async function sendOneImpl(
       ...(replyHeaders.inReplyTo
         ? { inReplyTo: replyHeaders.inReplyTo, references: replyHeaders.references }
         : {}),
+      ...(replyHeaders.headers || {}),
       from: { name: s.name, address: s.from },
       to: recipient,
       subject,
@@ -142,6 +154,27 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
     );
     return;
   }
+  if (c.mode === 'live') {
+    // Emergency stop and the sending policy gate every live message before it is claimed.
+    // Holding is a no-op on status: nothing is marked failed, sending simply resumes later.
+    if (sendingHalted()) {
+      c.nextAt = Date.now() + 30000;
+      put('campaign', c);
+      return;
+    }
+    if (!windowOpen(c)) {
+      c.nextAt = nextWindowOpenAt(c);
+      put('campaign', c);
+      return;
+    }
+    const allowance = dailyCapFor(chosen);
+    if (sentToday(all('campaign'), c.accountId) >= allowance) {
+      // Today's warm-up allowance is spent: wait for the next window instead of spinning.
+      c.nextAt = nextWindowOpenAt(c, Date.now() + 86400000);
+      put('campaign', c);
+      return;
+    }
+  }
   if (c.mode === 'live' && chosen?.provider === 'mailchimp-marketing') {
     await advanceMarketing(c, chosen, marketingClient(decrypt(chosen.password), chosen.server), {
       get: () => get('campaign', c.id),
@@ -161,7 +194,10 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
     return;
   }
   row.status = 'sending';
-  if (c.mode === 'live') row.messageId = `<${randomUUID()}@postlane.local>`;
+  // Message-ID must live in a domain the sender actually controls: `postlane.local` is a
+  // reserved pseudo-domain and some filters score it as a forged identifier.
+  if (c.mode === 'live')
+    row.messageId = `<${randomUUID()}@${senderDomain(chosen?.from) || 'postlane.local'}>`;
   row.attempts ||= [];
   row.attempts.push({
     messageId: row.messageId,
@@ -183,13 +219,22 @@ async function advanceCampaignImpl(selected, key, send = sendOne) {
       if (!account) throw new Error('发件账号不存在');
       if (c.senderEmail && account.from !== c.senderEmail)
         throw new Error('发件账号与任务绑定账号不一致，已暂停');
+      const body = render(c.body, row.fields);
+      // Opt-out is per campaign: appended only when the operator asked for it and the copy
+      // does not already contain its own wording.
+      const outgoingBody =
+        c.unsubscribe === true && !hasOptOutWording(body)
+          ? body + unsubscribeFooter(chosen.from)
+          : body;
+      const optOutHeaders = c.unsubscribe === true ? unsubscribeHeaders(chosen.from) : {};
       const result = await send(
         account,
         row.email,
         render(c.subject, row.fields),
-        render(c.body, row.fields),
+        outgoingBody,
         c.plainOnly === true,
         row.messageId,
+        Object.keys(optOutHeaders).length ? { headers: optOutHeaders } : {},
       );
       if (!result.accepted?.length) throw new Error('发送服务未接受此收件人');
       status = 'sent';

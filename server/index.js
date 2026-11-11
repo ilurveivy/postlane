@@ -54,6 +54,9 @@ import { z } from 'zod';
 import { all, get, put, remove, encrypt, decrypt, db } from './store.js';
 import { normalizeList, validateCampaign, csv, emailValid } from './domain.js';
 import { settings, transport, sendOne, verifyAccount, accountConcurrency } from './mailer.js';
+import { haltState, setHalt } from './send-halt.js';
+import { dailyCapFor, sentToday, localParts, TIME_ZONE } from './send-policy.js';
+import { checkSenderDomain } from './sender-domain.js';
 const app = express(),
   port = Number(process.env.PORT || 4173),
   csrf = randomBytes(32).toString('hex');
@@ -103,6 +106,12 @@ const wrap = (fn) => (req, res, next) =>
   Promise.resolve()
     .then(() => fn(req, res))
     .catch(next);
+// Accounts added before the warm-up ramp existed have no start date. Backfill once so the
+// daily allowance has a baseline instead of jumping straight to the ceiling.
+if (!verificationMode)
+  for (const account of all('account'))
+    if (!account.createdAt)
+      put('account', { ...account, createdAt: account.verifiedAt || new Date().toISOString() });
 function required(kind, id) {
   const value = get(kind, id);
   if (!value) {
@@ -174,10 +183,20 @@ app.get('/api/state', (req, res) =>
     runtimeMode,
     awake: awakeState(),
     backup: backupState(),
+    halt: haltState(),
+    timeZone: TIME_ZONE,
     accountConcurrency,
     reportRecipients: { execution: executionReportTo(), audit: auditReportTo() },
     settings: safeSettings(),
-    accounts: all('account').map(safeSettings),
+    accounts: all('account').map((a) => {
+      const safe = safeSettings(a);
+      return {
+        ...safe,
+        dailyCap: dailyCapFor(a),
+        sentToday: sentToday(all('campaign'), a.id),
+        sentDate: localParts().date,
+      };
+    }),
     lists: all('list').map(({ contacts, issues, ...l }) => ({
       ...l,
       count: contacts.length,
@@ -186,6 +205,15 @@ app.get('/api/state', (req, res) =>
     campaigns: all('campaign').map(summary),
     templates: all('template'),
     followup: followupState(),
+  }),
+);
+app.post(
+  '/api/send-halt',
+  wrap((req, res) => {
+    const input = z
+      .object({ halted: z.boolean(), reason: z.string().trim().max(200).optional() })
+      .parse(req.body || {});
+    res.json({ ...setHalt(input.halted, input.reason), campaigns: all('campaign').length });
   }),
 );
 app.get('/api/followup', (req, res) => {
@@ -376,12 +404,13 @@ const listSchema = z.object({
     .min(1)
     .max(10000),
 });
-async function preflightInput(input) {
+async function preflightInput(input, { domainRules = true } = {}) {
   const parsed = listSchema.parse(input);
   return preflightAddresses(
     parsed.rows.map((r) => r[parsed.emailColumn]),
     {
       lookupSuppression: (email) => get('suppression', email),
+      domainRules,
     },
   );
 }
@@ -423,7 +452,9 @@ app.post(
       }
     }
     if (!Object.hasOwn(rows[0], emailColumn)) throw new Error('请选择正确的邮箱列');
-    const review = await preflightInput(input);
+    // Import only drops rows that can never be delivered (format, duplicates, suppression);
+    // placeholder/role judgements belong to the send-time review, where they are visible.
+    const review = await preflightInput(input, { domainRules: false });
     const list = applyPreflight(normalizeList(name, rows, emailColumn), review);
     list.contacts = list.contacts.filter((r) => {
       const blocked = get('suppression', r.email);
@@ -684,6 +715,8 @@ const smtpSchema = z.object({
   secure: z.boolean(),
   user: z.string().trim().min(1).max(254),
   password: z.string().max(1000).optional(),
+  // Optional override for the warm-up ramp; still capped at 200/day by send-policy.
+  dailyCap: z.number().int().min(1).max(200).optional(),
 });
 
 const accountSchema = z.union([
@@ -728,7 +761,14 @@ app.post(
     )
       throw new Error('该邮箱已添加，请编辑已有账号');
     res.json(
-      safeSettings(put('account', { ...d, id: randomUUID(), password: encrypt(d.password) })),
+      safeSettings(
+        put('account', {
+          ...d,
+          id: randomUUID(),
+          createdAt: new Date().toISOString(),
+          password: encrypt(d.password),
+        }),
+      ),
     );
   }),
 );
@@ -839,9 +879,18 @@ app.patch(
 app.post(
   '/api/accounts/:id/verify',
   wrap(async (req, res) => {
-    await verifyAccount(required('account', req.params.id));
-    put('account', { ...required('account', req.params.id), verifiedAt: new Date().toISOString() });
-    res.json({ ok: true });
+    const account = required('account', req.params.id);
+    await verifyAccount(account);
+    // SPF/DKIM/DMARC are advisory: a missing record never blocks adding a sender, but the
+    // operator should see it before spending the account's reputation.
+    const domainCheck = await checkSenderDomain(account.from);
+    put('account', {
+      ...account,
+      verifiedAt: new Date().toISOString(),
+      createdAt: account.createdAt || new Date().toISOString(),
+      domainCheck,
+    });
+    res.json({ ok: true, domainCheck, warnings: domainCheck.warnings });
   }),
 );
 app.get(
