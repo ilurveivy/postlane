@@ -7,7 +7,6 @@ import {
   detectFollowUpColumns,
   dueFollowUp,
   earliestFollowUpAt,
-  hasFollowUps,
   hasOpenFollowUp,
   parseFollowUpCell,
   scheduleNextFollowUp,
@@ -159,6 +158,7 @@ test('队列：首封永远优先，跟进只在到期后成为候选', () => {
   assert.equal(earliestFollowUpAt(campaign), now - 1);
   assert.equal(campaignHasOpenFollowUps(campaign), true);
   assert.equal(campaignHasOpenFollowUps({ recipients: [{ status: 'pending' }] }), false);
-  assert.equal(hasFollowUps(campaign), true, '任务级标记决定队列要不要为跟进保留这个任务');
-  assert.equal(hasFollowUps({ recipients: [{ status: 'pending' }] }), false);
+  // 队列每 350ms 扫一次，所以任务级标记必须能挡住没有跟进的任务。
+  assert.equal(campaignHasOpenFollowUps({ ...campaign, followUpEnabled: false }), false);
+  assert.equal(campaignHasOpenFollowUps({ followUpEnabled: true }), false);
 });

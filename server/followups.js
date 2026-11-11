@@ -127,11 +127,6 @@ export function hasOpenFollowUp(r) {
 export const dueFollowUp = (r, now = Date.now()) =>
   hasOpenFollowUp(r) && (r.nextFollowUpAt || 0) <= now;
 
-/** Only campaigns that actually carry follow-ups need the extra queue bookkeeping. */
-export const hasFollowUps = (campaign) =>
-  Boolean(campaign?.followUpEnabled) ||
-  (campaign?.recipients || []).some((r) => r.followUps?.length);
-
 /**
  * Whether the queue has to keep this campaign around for a follow-up.
  *
@@ -158,17 +153,4 @@ export function scheduleNextFollowUp(recipient, finishedAt = Date.now()) {
   const next = recipient?.followUps?.[stageOf(recipient) - 1];
   recipient.nextFollowUpAt = next ? finishedAt + next.afterDays * DAY_MS : 0;
   return recipient.nextFollowUpAt;
-}
-
-/** What the UI shows for a row: which email is next, and when. */
-export function followUpSummary(r) {
-  const total = (r?.followUps?.length || 0) + 1;
-  const sent = Math.min(stageOf(r) || 1, total);
-  if (!r?.followUps?.length) return null;
-  return {
-    sent,
-    total,
-    pending: hasOpenFollowUp(r),
-    nextAt: hasOpenFollowUp(r) ? new Date(r.nextFollowUpAt || 0).toISOString() : null,
-  };
 }
