@@ -49,7 +49,6 @@ jobs:
         run: |
           set -uo pipefail
           docker run -d --name postlane-ci \
-            -e POSTLANE_MODE=verify \
             -e DATA_DIR=/data \
             -v postlane-ci-data:/data \
             -p 4173:4173 postlane:ci

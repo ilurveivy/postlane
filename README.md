@@ -51,6 +51,7 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
 ```
 
 `verify` 模式下所有写操作、发信、IMAP 同步和外部请求都被拒绝，适合先看界面。
+空目录会用一个内存库展示空界面，**不会在磁盘上留下任何文件**；指向已有数据目录时则只读展示真实数据。
 
 ---
 

@@ -35,18 +35,23 @@ if (!verificationMode) {
 const keyPath = path.join(dataDir, 'secret.key');
 if (!verificationMode && !fs.existsSync(keyPath))
   fs.writeFileSync(keyPath, randomBytes(32), { mode: 0o600 });
-const key = fs.readFileSync(keyPath);
-export const db = new Database(
-  path.join(dataDir, 'postlane.sqlite'),
-  verificationMode ? { readonly: true, fileMustExist: true } : {},
-);
-if (verificationMode) db.pragma('query_only = ON');
-else {
-  db.pragma('journal_mode = WAL');
+// Read-only demo mode must work on a fresh checkout, so with no key on disk it uses an
+// ephemeral one (nothing is encrypted anyway — verify mode cannot write).
+const key =
+  verificationMode && !fs.existsSync(keyPath) ? randomBytes(32) : fs.readFileSync(keyPath);
+const databasePath = path.join(dataDir, 'postlane.sqlite');
+// Same reasoning for the database: an existing file is opened read-only, a missing one
+// becomes an empty in-memory database so the interface can still be explored.
+const memoryOnly = verificationMode && !fs.existsSync(databasePath);
+export const db = memoryOnly
+  ? new Database(':memory:')
+  : new Database(databasePath, verificationMode ? { readonly: true, fileMustExist: true } : {});
+if (memoryOnly || !verificationMode)
   db.exec(
     'CREATE TABLE IF NOT EXISTS documents (kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(kind,id))',
   );
-}
+if (verificationMode) db.pragma('query_only = ON');
+else db.pragma('journal_mode = WAL');
 export const all = (kind) =>
   db
     .prepare('SELECT json FROM documents WHERE kind=? ORDER BY rowid DESC')
