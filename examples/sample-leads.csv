@@ -1,0 +1,25 @@
+business_email,email_subject,email_content,姓名,公司
+alex@example.com,{{姓名}}，关于 {{公司}} 的一个想法,"{{姓名}}，你好！
+
+我在看 {{公司}} 最近的内容时想到一个可以优化的点，想和你聊聊。
+
+如果方便，直接回这封邮件就好。
+
+祝好，
+Aiden",Alex,Example Studio
+blair@example.com,{{姓名}}，一个和 {{公司}} 合作的机会,"{{姓名}}，你好！
+
+我们做了一个工具，能帮 {{公司}} 这类团队把外联效率提上来。
+
+想听听你的看法，回信即可。
+
+祝好，
+Aiden",Blair,Sample Labs
+casey@example.com,{{姓名}}，想请教一个问题,"{{姓名}}，你好！
+
+看到你在 {{公司}} 做的项目，有个问题想请教。
+
+期待你的回信。
+
+祝好，
+Aiden",Casey,Demo Inc

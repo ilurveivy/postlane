@@ -60,6 +60,9 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
    只用来收信回复的账号可以勾「仅回复」，它不参与批量分配。
 2. **导入批量任务** —— 上传 `.xlsx` / `.csv`。第一行是表头，必须有 `business_email`、`email_subject`、`email_content` 三列，其余列会变成可用的 `{{变量}}`。
    导入会去重并校验邮箱格式，也可以先跑一次地址预检（DNS/MX），见 [docs/address-preflight.md](docs/address-preflight.md)。
+
+   没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx)（全是 `example.com` 假地址，发不出去）。
+
 3. **安排发送** —— 选任务、选账号、看预览（就是收件人真实看到的内容）、设节奏与预约时间，然后保存草稿 / 立即发送 / 加入预约。
 4. **邮箱与回复跟进** —— IMAP 拉回回信，按「需要回复 / 已处理 / 退信」分类处理，可导出跟进表。
 5. **批次报表** —— 每个批次的实际投递结果、失败原因、重试历史，与留档副本彼此独立。
