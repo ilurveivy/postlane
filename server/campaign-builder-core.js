@@ -188,7 +188,19 @@ export function createCampaignBuilder({
     // need replacement by a later row. Never recheck already allocated contacts.
     if (candidatesOnly) return rows.map((r) => r.email);
     const recipients = rows.slice(0, d.limit || rows.length);
-    if (!recipients.length) throw Error('所选来源中没有可安排的邮件');
+    if (!recipients.length)
+      // "Nothing to schedule" is useless when the real reason is that every address was
+      // screened out; name the first few so the operator can fix the file.
+      throw Error(
+        issues.length
+          ? `${issues.length} 个地址全部被排除：` +
+              issues
+                .slice(0, 3)
+                .map((i) => `${i.email}（${i.reason}）`)
+                .join('、') +
+              '。修正后重新导入即可'
+          : '所选来源中没有可安排的邮件',
+      );
     if (recipients.length > 10000) throw Error('每次最多安排 10,000 封邮件，请填写本次数量');
     if (d.limit && recipients.length < d.limit)
       throw Error('可安排邮件不足指定数量，请刷新后重新核对');
