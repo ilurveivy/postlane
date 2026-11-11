@@ -42,19 +42,28 @@ jobs:
           push: false
           load: true
           tags: postlane:ci
+      # The image runs as the non-root `node` user, so /data must be a named volume
+      # (it inherits the image's ownership). A host bind mount would be owned by the
+      # runner user and the container could not create the SQLite file or secret key.
       - name: smoke test the image
         run: |
-          mkdir -p "$RUNNER_TEMP/data"
+          set -uo pipefail
           docker run -d --name postlane-ci \
             -e POSTLANE_MODE=verify \
             -e DATA_DIR=/data \
-            -v "$RUNNER_TEMP/data:/data" \
+            -v postlane-ci-data:/data \
             -p 4173:4173 postlane:ci
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/ready >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:4173/ready >/dev/null 2>&1; then break; fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:4173/ready
-          curl -fsS http://127.0.0.1:4173/health_check
-          docker logs postlane-ci
-          docker rm -f postlane-ci
+          status=0
+          curl -fsS http://127.0.0.1:4173/ready || status=1
+          curl -fsS http://127.0.0.1:4173/health_check || status=1
+          # Always dump the container log before failing: without it a red step says
+          # nothing about why the process never became ready.
+          echo '--- container log ---'
+          docker logs postlane-ci || true
+          docker rm -f postlane-ci >/dev/null || true
+          docker volume rm postlane-ci-data >/dev/null || true
+          exit $status
