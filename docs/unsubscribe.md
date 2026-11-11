@@ -20,6 +20,74 @@ POSTLANE_PUBLIC_ORIGIN=https://mail.example.com
 没配的话不会发出半截链接：邮件头只剩 `mailto:`（对方点「退订」会生成一封
 以 `unsubscribe` 为主题的邮件，靠第 1 条路生效）。预览页会明确提示这件事。
 
+## 没有公开地址？三条路
+
+一键退订需要一个**外网能打开的 HTTPS 地址**，因为收件人点的是邮件客户端里的链接，
+不是你的 localhost。挑一个：
+
+### 路线 A：有域名 + 有机器（最正统）
+
+把 `mail.example.com` 解析到跑 Postlane 的机器，前面挂一层反向代理终止 TLS：
+
+```caddy
+# Caddy：自动申请证书，两行就够
+mail.example.com {
+  reverse_proxy 127.0.0.1:4173
+}
+```
+
+```nginx
+# Nginx：证书自己申请（certbot / acme.sh）
+server {
+  listen 443 ssl http2;
+  server_name mail.example.com;
+  ssl_certificate     /etc/letsencrypt/live/mail.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/mail.example.com/privkey.pem;
+  location / { proxy_pass http://127.0.0.1:4173; proxy_set_header Host $host; }
+}
+```
+
+然后 `.env` 里写 `POSTLANE_PUBLIC_ORIGIN=https://mail.example.com`，重启。
+（顺便：这也是[对外访问](configuration.md)的正确方式，别直接把 4173 端口暴露出去。）
+
+### 路线 B：没有域名 / 不想开端口（最快）
+
+用一条隧道把本机端口映射成一个 HTTPS 地址，不用改路由器、不用证书：
+
+```bash
+# Cloudflare Tunnel：免费，本机跑起来就有一个 https 地址
+cloudflared tunnel --url http://127.0.0.1:4173
+# → https://random-words.trycloudflare.com   ← 把它填进 POSTLANE_PUBLIC_ORIGIN
+
+# 或者 ngrok
+ngrok http 4173
+```
+
+注意两点：
+
+1. **临时隧道的域名每次重启都会变**，变了之后**旧邮件里的退订链接就失效了**
+   （老链接指向的域名不再存在）。所以要么用固定域名（Cloudflare 的 named tunnel，
+   绑一个自己的域名就能固定），要么接受「这一批信的链接只管这一阵」。
+2. 隧道等于把后台暴露到公网 —— **务必先设 `POSTLANE_ACCESS_PASSWORD`**。
+   `/u/<token>` 是唯一免登录的路径，其余照旧要密码。
+
+### 路线 C：不配（够用，也合规）
+
+一键链接的价值主要在 Gmail / Yahoo 的「退订」按钮。如果你每天只发几十封、
+正文里已经写明「回复『退订』即可」，那就够了：
+
+- 邮件头仍然带 `mailto:` 兜底，对方点「退订」会生成一封退订邮件；
+- IMAP 拉回时自动识别并写压制名单 —— 和点链接的效果完全一样。
+
+代价是：对方要愿意回一句，而 Gmail 不会把「退订」按钮变成一键完成。
+用冷邮件量小的话，这条完全可接受；量大（每天上百封）时一键按钮能显著降低投诉率。
+
+### 换了公开地址会不会出问题
+
+退订令牌里只有**地址和签名**，和域名无关，所以同一个数据库搬到新域名，令牌照样有效
+—— 只要**旧域名还指向这个服务**，旧邮件里的链接也还能用。
+一旦旧域名停了，旧邮件里的链接就点不开了，所以公开地址尽量一次定好。
+
 退订说明仍然是**按任务开关**的：建任务第 2 步「退订说明」，默认关闭。
 打开后每封邮件（包括第二、三封跟进）都会附带说明和邮件头。
 

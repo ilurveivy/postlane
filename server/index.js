@@ -66,6 +66,15 @@ import {
 } from './unsubscribe.js';
 import { dailyCapFor, sentToday, localParts, TIME_ZONE } from './send-policy.js';
 import { checkSenderDomain } from './sender-domain.js';
+import {
+  accountPool,
+  checkWarmupPlacement,
+  normalizeConfig,
+  runWarmupRound,
+  saveWarmupConfig,
+  warmupConfig,
+  warmupSummary,
+} from './warmup.js';
 const app = express(),
   port = Number(process.env.PORT || 4173),
   csrf = randomBytes(32).toString('hex');
@@ -1002,6 +1011,38 @@ app.post(
     if (!result.accepted?.length) throw new Error('发送服务未接受测试邮件');
     res.json({ ok: true });
   }),
+);
+app.get(
+  '/api/warmup',
+  wrap((_, res) => res.json(warmupSummary())),
+);
+app.put(
+  '/api/warmup',
+  wrap((req, res) => {
+    const d = z
+      .object({
+        enabled: z.boolean().optional(),
+        accountIds: z.array(z.string()).max(20).optional(),
+        dailyCount: z.number().int().min(1).max(10).optional(),
+      })
+      .parse(req.body);
+    if (d.enabled) {
+      // Refuse before saving: a saved "on" with one account would spin forever finding no partner.
+      const next = normalizeConfig({ ...warmupConfig(), ...d });
+      if (accountPool(next, all('account')).length < 2)
+        throw new Error('互寄预热至少要两个可用的发件账号');
+    }
+    saveWarmupConfig(d);
+    res.json(warmupSummary());
+  }),
+);
+app.post(
+  '/api/warmup/run',
+  wrap(async (_, res) => res.json(await runWarmupRound({ force: true }))),
+);
+app.post(
+  '/api/warmup/check',
+  wrap(async (_, res) => res.json(await checkWarmupPlacement())),
 );
 app.post(
   '/api/templates',

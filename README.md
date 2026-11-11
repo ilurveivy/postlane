@@ -82,9 +82,9 @@ POSTLANE_MODE=verify DATA_DIR=$(mktemp -d) npm start
    导入会去重并校验邮箱格式，也可以先跑一次地址预检（DNS/MX），见 [docs/address-preflight.md](docs/address-preflight.md)。
 
    没数据先试：[examples/sample-leads.xlsx](examples/sample-leads.xlsx) —— 它演示了表头、`{{变量}}`
-和新增的 `第二封跟进` / `第三封跟进` 两列（第 4 行故意留空）。注意里面的地址是 `example.com`
-示例地址，**预览会按设计把它们全部排除**（占位符域名是硬拦的，避免真发给假地址），
-所以想点通完整流程请换成你自己的名单。
+   和新增的 `第二封跟进` / `第三封跟进` 两列（第 4 行故意留空）。注意里面的地址是 `example.com`
+   示例地址，**预览会按设计把它们全部排除**（占位符域名是硬拦的，避免真发给假地址），
+   所以想点通完整流程请换成你自己的名单。
 
 3. **安排发送** —— 选任务、选账号、看预览（就是收件人真实看到的内容）、设节奏、发送时间窗口、是否加退订说明，然后保存草稿 / 立即发送 / 加入预约。
    每个账号每天有上限（新账号 20 封起步，硬顶 200 封），窗口外自动挂起 —— 见 [docs/sending-policy.md](docs/sending-policy.md)。
@@ -128,6 +128,8 @@ Docker 方式读的也是同一个文件。
 - **退订说明可开关**，打开时同时带 `List-Unsubscribe` / `List-Unsubscribe-Post` 邮件头；配置了
   `POSTLANE_PUBLIC_ORIGIN` 还会带上签名的一键退订链接，点一下即生效（见 [一键退订](docs/unsubscribe.md)）；
 - **跟进也守同样的纪律**：第二、三封跟进和首封共用每日上限与发送时段，前一封确认送达且到点无回复才发；
+- **邮箱预热可开关**：至少两个账号才能打开，池内账号互相寄几封普通邮件，并用 IMAP 回报
+  「进收件箱 / 进垃圾箱 / 没到」——它证明的是落箱，不是声誉（见 [邮箱预热](docs/warmup.md)）；
 - **一键急停**：顶栏「全部停发」同时停掉活动任务、回复草稿和报表投递，恢复后从当前收件人继续。
 
 细节和 Message-ID 为什么改成用你自己的域名：[docs/sending-policy.md](docs/sending-policy.md)。
