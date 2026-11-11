@@ -1,0 +1,15 @@
+# Allowlist: no database, archives, credentials, outputs, Git history or host modules.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!index.html
+!vite.config.js
+!.prettierrc.json
+!src/
+!src/**
+!server/
+!server/**
+!scripts/
+!scripts/**

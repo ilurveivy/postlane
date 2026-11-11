@@ -1,0 +1,43 @@
+services:
+  postlane:
+    build: .
+    image: postlane:latest
+    container_name: postlane
+    restart: unless-stopped
+    ports:
+      - '4173:4173'
+    environment:
+      PORT: 4173
+      DATA_DIR: /data
+      LAN_ACCESS: 'false'
+      # 不设密码就是完全不鉴权 —— 公网部署前务必设置
+      POSTLANE_ACCESS_MODE: ${POSTLANE_ACCESS_MODE:-basic}
+      POSTLANE_ACCESS_PASSWORD: ${POSTLANE_ACCESS_PASSWORD:-}
+      POSTLANE_PUBLIC_ORIGIN: ${POSTLANE_PUBLIC_ORIGIN:-}
+      POSTLANE_MODE: ${POSTLANE_MODE:-live}
+      # 报告 / 留档副本的收件人（留空 = 不发报告邮件）
+      POSTLANE_REPORT_TO: ${POSTLANE_REPORT_TO:-}
+      POSTLANE_EXECUTION_REPORT_TO: ${POSTLANE_EXECUTION_REPORT_TO:-}
+      POSTLANE_AUDIT_REPORT_TO: ${POSTLANE_AUDIT_REPORT_TO:-}
+      POSTLANE_ARCHIVE_RECIPIENTS: ${POSTLANE_ARCHIVE_RECIPIENTS:-}
+      POSTLANE_INTERNAL_RECIPIENTS: ${POSTLANE_INTERNAL_RECIPIENTS:-}
+      POSTLANE_BACKUP_ENABLED: ${POSTLANE_BACKUP_ENABLED:-false}
+      POSTLANE_ADMIN_EMAIL: ${POSTLANE_ADMIN_EMAIL:-}
+    volumes:
+      # SQLite 数据库、secret.key、留档文件都在这里，删了就等于清空业务数据
+      - postlane-data:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4173/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  postlane-data:

@@ -1,0 +1,71 @@
+{
+  "name": "postlane",
+  "version": "1.0.0",
+  "description": "Self-hosted personalized cold email workbench: Excel/CSV import, sender pool, scheduled sending, inbox and follow-up.",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "email",
+    "cold-email",
+    "smtp",
+    "imap",
+    "outreach",
+    "self-hosted",
+    "postlane"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xunuoyan/postlane.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xunuoyan/postlane/issues"
+  },
+  "homepage": "https://github.com/xunuoyan/postlane#readme",
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  },
+  "scripts": {
+    "dev": "node server/index.js",
+    "build": "vite build",
+    "start": "node server/index.js --production",
+    "test": "node --test tests/*.test.js",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore-backup.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@mailchimp/mailchimp_marketing": "^3.0.80",
+    "@mailchimp/mailchimp_transactional": "^1.4.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "better-sqlite3": "^13.0.3",
+    "csv-parse": "^7.0.2",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.11.1",
+    "helmet": "^8.3.0",
+    "iconv-lite": "^0.7.3",
+    "imapflow": "^2.0.2",
+    "jszip": "^3.10.2",
+    "libqp": "^2.1.1",
+    "mailparser": "^3.9.28",
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.3",
+    "openai": "^7.15.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "prettier": "^3.9.6",
+    "smtp-server": "^3.19.10",
+    "vite": "^8.3.0"
+  }
+}

@@ -1,0 +1,107 @@
+.import-workspace {
+  display: grid;
+  gap: 22px;
+  margin: 24px 0;
+}
+.import-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+.import-metrics .panel {
+  padding: 22px;
+  display: grid;
+  gap: 12px;
+}
+.import-metrics strong {
+  font-size: 30px;
+  font-weight: 650;
+  color: #19345c;
+}
+.import-metrics span {
+  font-size: 13px;
+  color: #496285;
+}
+.import-metrics small,
+.import-note,
+.import-table small {
+  font-size: 12px;
+  color: #637b9c;
+}
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.import-table th,
+.import-table td {
+  padding: 18px 22px;
+  border-bottom: 1px solid #e5edf7;
+  text-align: left;
+  font-size: 13px;
+}
+.import-table th {
+  background: #f8faff;
+  color: #567090;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.import-table small {
+  display: block;
+  margin-top: 7px;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+}
+.import-selected {
+  background: #f1f6ff;
+}
+.import-note {
+  padding: 16px 24px;
+  line-height: 1.7;
+}
+.import-edit {
+  padding: 20px 24px;
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+}
+.import-edit label {
+  display: grid;
+  gap: 8px;
+}
+.import-detail-summary {
+  padding: 20px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.import-detail details {
+  margin: 20px 24px;
+}
+.import-child-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
+}
+.import-id {
+  overflow-wrap: anywhere;
+  max-width: 420px;
+  font-family: monospace;
+}
+.import-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0;
+}
+@media (max-width: 900px) {
+  .import-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .import-table th,
+  .import-table td {
+    padding: 14px;
+  }
+  .import-table {
+    min-width: 740px;
+  }
+}
