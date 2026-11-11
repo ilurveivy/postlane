@@ -59,10 +59,27 @@ jobs:
           status=0
           curl -fsS http://127.0.0.1:4173/ready || status=1
           curl -fsS http://127.0.0.1:4173/health_check || status=1
-          # Always dump the container log before failing: without it a red step says
-          # nothing about why the process never became ready.
+          # Always dump the container log, and mirror it into the job summary: without it
+          # a red step says nothing about why the process never became ready.
+          logs="$(docker logs postlane-ci 2>&1 | tail -n 80 || true)"
           echo '--- container log ---'
-          docker logs postlane-ci || true
+          echo "$logs"
+          state="$(docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}}' postlane-ci 2>&1 || true)"
+          echo "--- container state: $state ---"
+          {
+            echo ''
+            echo '### container state'
+            echo ''
+            echo '```'
+            echo "$state"
+            echo '```'
+            echo ''
+            echo '### container log (tail)'
+            echo ''
+            echo '```'
+            echo "$logs"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           docker rm -f postlane-ci >/dev/null || true
           docker volume rm postlane-ci-data >/dev/null || true
           exit $status
