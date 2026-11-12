@@ -746,11 +746,12 @@ export default function CampaignBuilder({ api, onCreated, onLegacy }) {
                   </p>
                 )}
                 {preview.unsubscribe && preview.unsubscribeLinkAvailable === false && (
-                  <div className="builder-error">
-                    没有配置 POSTLANE_PUBLIC_ORIGIN：邮件里放不了一键退订链接，只能靠对方回信退订。
-                    配一个外网能打开的 HTTPS 地址即可（域名反代或 Cloudflare Tunnel，见
-                    docs/unsubscribe.md）。
-                  </div>
+                  <p className="builder-muted">
+                    未配置
+                    POSTLANE_PUBLIC_ORIGIN：邮件里不带一键退订链接，退订由正文的「回复退订」生效 ——
+                    这是默认的轻量方案，够用。想要 Gmail 的一键退订按钮，再配一个外网 HTTPS 地址
+                    （见 docs/unsubscribe.md）。
+                  </p>
                 )}
                 {!!preview.limits?.length && (
                   <p className="builder-muted">

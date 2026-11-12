@@ -2642,138 +2642,119 @@ function TaskDetail({ detail: c, onClose, onAction, onFollowup, busy, onRetryRow
     </Modal>
   );
 }
-function WarmupPanel({ accounts, busy, run, notify }) {
+function InboxTestPanel({ busy, run, notify }) {
   const [data, setData] = useState(null);
-  const [pool, setPool] = useState([]);
-  const [count, setCount] = useState('3');
-  const [on, setOn] = useState(false);
-  const usable = accounts.filter(
-    (a) => a.from && !a.disabled && !a.replyOnly && (a.provider === 'smtp' || !a.provider),
-  );
-  const ready = usable.length >= 2;
+  const [fromId, setFromId] = useState('');
+  const [toId, setToId] = useState('');
   function apply(next) {
     setData(next);
-    setPool(next.config.accountIds);
-    setCount(String(next.config.dailyCount));
-    setOn(next.config.enabled);
+    const ids = next.accounts.map((a) => a.id);
+    setFromId((v) => (ids.includes(v) ? v : ids[0] || ''));
+    setToId((v) => (ids.includes(v) ? v : ids[0] || ''));
   }
   useEffect(() => {
-    api('/warmup')
+    api('/inbox-test')
       .then(apply)
       .catch(() => {});
   }, []);
-  const togglePool = (id) =>
-    setPool((p) => (p.includes(id) ? p.filter((v) => v !== id) : [...p, id]));
+  if (!data) return null;
+  const last = data.last;
+  const badge =
+    last && last.placement === 'inbox'
+      ? { text: '收件箱', className: 'ok' }
+      : last && last.placement === 'junk'
+        ? { text: '垃圾箱', className: 'warn' }
+        : last && last.placement === 'missing'
+          ? { text: '没到', className: 'bad' }
+          : last
+            ? { text: '待检查', className: '' }
+            : null;
+  const refresh = async () => apply(await api('/inbox-test'));
   return (
     <section className="panel" style={{ padding: 24, marginBottom: 20 }}>
       <div className="section-heading">
         <div>
-          <h2>邮箱预热</h2>
-          <p>让池子里的账号互相寄几封普通邮件，顺便验证「你的信到底进不进收件箱」。</p>
+          <h2>落箱自检</h2>
+          <p>发一封普通邮件到你自己的另一个邮箱，看它落在收件箱还是垃圾箱。</p>
         </div>
         <span className="settings-icon">
           <ShieldCheck size={24} />
         </span>
       </div>
-      {!ready && (
-        <p className="muted">
-          现在只有 {usable.length} 个可用发件账号。一个账号不需要预热，也没有互寄对象 ——
-          再加一个账号，这里就能打开。
+      {!data.canTest && <p className="muted">先添加一个可用的发件账号，这里才能自检。</p>}
+      {data.canTest && (
+        <>
+          <label className="field">
+            发件账号
+            <select value={fromId} disabled={busy} onChange={(e) => setFromId(e.target.value)}>
+              {data.accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.from}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            收件邮箱（必须是你自己在邮趣里的账号，落箱要靠它的 IMAP 读）
+            <select value={toId} disabled={busy} onChange={(e) => setToId(e.target.value)}>
+              {data.accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.from}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await api('/inbox-test', {
+                    method: 'POST',
+                    body: { fromAccountId: fromId, toAccountId: toId },
+                  });
+                  notify('测试信已发出，1 分钟后点「检查落箱」');
+                  await refresh();
+                })
+              }
+            >
+              发一封测试信
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const r = await api('/inbox-test/check', { method: 'POST', body: {} });
+                  notify(
+                    r.results?.length
+                      ? `检查结果：${r.results.map((x) => x.hint || '待定').join('；')}`
+                      : r.reason || '没有可检查的信',
+                  );
+                  await refresh();
+                })
+              }
+            >
+              检查落箱
+            </Button>
+          </div>
+        </>
+      )}
+      {last && (
+        <p className="account-quota">
+          {badge && <strong>{badge.text}</strong>} {last.from} → {last.to} · {date(last.sentAt)} ·{' '}
+          {last.hint}
         </p>
       )}
-      <label className="field">
-        <input
-          type="checkbox"
-          checked={on}
-          disabled={!ready || busy}
-          onChange={(e) => setOn(e.target.checked)}
-        />{' '}
-        启用互寄预热{ready ? '' : '（至少需要两个可用账号）'}
-      </label>
-      {ready && (
-        <label className="field">
-          参与互寄的账号
-          {usable.map((a) => (
-            <span key={a.id} style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={pool.includes(a.id)}
-                disabled={busy}
-                onChange={() => togglePool(a.id)}
-              />{' '}
-              {a.name} · {a.from}
-            </span>
-          ))}
-        </label>
-      )}
-      <label className="field">
-        每个账号每天发几封
-        <input
-          type="number"
-          min="1"
-          max="10"
-          value={count}
-          disabled={busy}
-          onChange={(e) => setCount(e.target.value)}
-          style={{ maxWidth: 120 }}
-        />
-      </label>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button
-          disabled={busy || !ready}
-          onClick={() =>
-            run(async () => {
-              const next = await api('/warmup', {
-                method: 'PUT',
-                body: {
-                  enabled: on,
-                  accountIds: pool,
-                  dailyCount: Math.min(10, Math.max(1, Number(count) || 3)),
-                },
-              });
-              apply(next);
-              notify('预热设置已保存');
-            })
-          }
-        >
-          保存预热设置
-        </Button>
-        <Button
-          disabled={busy || !ready}
-          onClick={() =>
-            run(async () => {
-              const r = await api('/warmup/run', { method: 'POST' });
-              notify(r.sent ? `已互寄 ${r.sent} 封` : `没有发出：${r.reason || '条件不满足'}`);
-              apply(await api('/warmup'));
-            })
-          }
-        >
-          立即试发一轮
-        </Button>
-        <Button
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              const r = await api('/warmup/check', { method: 'POST' });
-              notify(r.checked ? `检查了 ${r.checked} 封的落箱情况` : '还没有可以检查的信');
-              apply(await api('/warmup'));
-            })
-          }
-        >
-          立即检查落箱
-        </Button>
-      </div>
-      {data && (
-        <p className="account-quota">
-          今日已互寄 <strong>{data.todaySent}</strong> 封 · 待检测 {data.pendingChecks} 封
-          {data.recent.checked
-            ? ` · 近 ${data.recent.checked} 封里有 收件箱 ${data.recent.inbox} / 垃圾箱 ${data.recent.junk} / 未到 ${data.recent.missing}`
-            : ''}
+      {data.totals.checked > 0 && (
+        <p className="muted">
+          历史 {data.totals.checked} 次：收件箱 {data.totals.inbox} / 垃圾箱 {data.totals.junk} /
+          没到 {data.totals.missing}
+          {data.pending ? ` · ${data.pending} 封待检查` : ''}
         </p>
       )}
       <p className="muted">
-        看着有点用、但别期待太多：同域互寄对陌生收件人的声誉几乎没帮助，真正有价值的是这里读回来的落箱结果
-        —— 一直进垃圾箱就先别发冷邮件。预热不占冷邮件的每日额度。
+        只验证落箱，不发任何额外流量。同一账号寄给自己只说明「服务商内部投递」没问题；
+        发件账号和收件邮箱在不同服务商时，结果才有真实参考价值。
       </p>
     </section>
   );
@@ -2917,7 +2898,7 @@ function Settings({ initial, accounts, busy, run, refresh, notify }) {
           </div>
         )}
       </section>
-      <WarmupPanel accounts={accounts} busy={busy} run={run} notify={notify} />
+      <InboxTestPanel busy={busy} run={run} notify={notify} />
       <div className="settings-layout">
         <section className="panel settings-panel">
           <div className="section-heading">

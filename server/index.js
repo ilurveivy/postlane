@@ -66,15 +66,7 @@ import {
 } from './unsubscribe.js';
 import { dailyCapFor, sentToday, localParts, TIME_ZONE } from './send-policy.js';
 import { checkSenderDomain } from './sender-domain.js';
-import {
-  accountPool,
-  checkWarmupPlacement,
-  normalizeConfig,
-  runWarmupRound,
-  saveWarmupConfig,
-  warmupConfig,
-  warmupSummary,
-} from './warmup.js';
+import { checkTest, inboxTestSummary, sendTest } from './inbox-test.js';
 const app = express(),
   port = Number(process.env.PORT || 4173),
   csrf = randomBytes(32).toString('hex');
@@ -1013,36 +1005,26 @@ app.post(
   }),
 );
 app.get(
-  '/api/warmup',
-  wrap((_, res) => res.json(warmupSummary())),
+  '/api/inbox-test',
+  wrap((_, res) => res.json(inboxTestSummary())),
 );
-app.put(
-  '/api/warmup',
-  wrap((req, res) => {
+app.post(
+  '/api/inbox-test',
+  wrap(async (req, res) => {
     const d = z
-      .object({
-        enabled: z.boolean().optional(),
-        accountIds: z.array(z.string()).max(20).optional(),
-        dailyCount: z.number().int().min(1).max(10).optional(),
-      })
+      .object({ fromAccountId: z.string().min(1), toAccountId: z.string().min(1) })
       .parse(req.body);
-    if (d.enabled) {
-      // Refuse before saving: a saved "on" with one account would spin forever finding no partner.
-      const next = normalizeConfig({ ...warmupConfig(), ...d });
-      if (accountPool(next, all('account')).length < 2)
-        throw new Error('互寄预热至少要两个可用的发件账号');
-    }
-    saveWarmupConfig(d);
-    res.json(warmupSummary());
+    const record = await sendTest(d);
+    res.json({ record, ...inboxTestSummary() });
   }),
 );
 app.post(
-  '/api/warmup/run',
-  wrap(async (_, res) => res.json(await runWarmupRound({ force: true }))),
-);
-app.post(
-  '/api/warmup/check',
-  wrap(async (_, res) => res.json(await checkWarmupPlacement())),
+  '/api/inbox-test/check',
+  wrap(async (req, res) => {
+    const d = z.object({ id: z.string().optional() }).parse(req.body || {});
+    const result = await checkTest({ id: d.id || '' });
+    res.json({ ...result, ...inboxTestSummary() });
+  }),
 );
 app.post(
   '/api/templates',

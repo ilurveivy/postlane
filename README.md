@@ -128,8 +128,8 @@ Docker 方式读的也是同一个文件。
 - **退订说明可开关**，打开时同时带 `List-Unsubscribe` / `List-Unsubscribe-Post` 邮件头；配置了
   `POSTLANE_PUBLIC_ORIGIN` 还会带上签名的一键退订链接，点一下即生效（见 [一键退订](docs/unsubscribe.md)）；
 - **跟进也守同样的纪律**：第二、三封跟进和首封共用每日上限与发送时段，前一封确认送达且到点无回复才发；
-- **邮箱预热可开关**：至少两个账号才能打开，池内账号互相寄几封普通邮件，并用 IMAP 回报
-  「进收件箱 / 进垃圾箱 / 没到」——它证明的是落箱，不是声誉（见 [邮箱预热](docs/warmup.md)）；
+- **落箱自检**：发一封普通邮件到你自己另一个邮箱，用 IMAP 读回它落在收件箱还是垃圾箱 ——
+  在发给陌生客户之前，这是唯一能提前知道结果的办法（见 [落箱自检](docs/inbox-test.md)）；
 - **一键急停**：顶栏「全部停发」同时停掉活动任务、回复草稿和报表投递，恢复后从当前收件人继续。
 
 细节和 Message-ID 为什么改成用你自己的域名：[docs/sending-policy.md](docs/sending-policy.md)。
@@ -215,7 +215,7 @@ npm run format:check   # prettier 校验
 - [发送纪律](docs/sending-policy.md)（每日上限 / 时间段 / 退订 / 急停）
 - [多步跟进](docs/followups.md)（第二、三封怎么写、什么时候发、什么时候停）
 - [一键退订](docs/unsubscribe.md)（签名链接 / 邮件头 / 压制名单）
-- [邮箱预热](docs/warmup.md)（新邮箱怎么先跑起来；含自建互寄方案）
+- [落箱自检](docs/inbox-test.md)（发一封测试信，看它进收件箱还是垃圾箱）
 - [地址预检](docs/address-preflight.md) · [渠道元数据修复](docs/channel-recovery.md)
 
 ---
